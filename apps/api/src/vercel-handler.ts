@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Request, Response } from "express";
+import { NodeRequest, NodeResponse } from "@nestjs/platform-node";
 import { createApplication } from "./application.js";
 
 let application: ReturnType<typeof createApplication> | undefined;
@@ -10,6 +10,8 @@ export default async function handler(
 ): Promise<void> {
   application ??= createApplication();
   const app = await application;
-  const server = app.getHttpAdapter().getInstance();
-  server(request as Request, response as Response);
+  const server = app.getHttpServer();
+  Object.setPrototypeOf(request, NodeRequest.prototype);
+  Object.setPrototypeOf(response, NodeResponse.prototype);
+  server.emit("request", request, response);
 }

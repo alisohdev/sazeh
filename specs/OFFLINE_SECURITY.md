@@ -44,9 +44,17 @@ Server change cursors must reflect committed transactions, not client clocks or 
 
 Bootstrap data and its high-watermark must represent one consistent database snapshot. A paginated bootstrap needs a stable snapshot token/materialized bounded snapshot; do not return a moving set under one cursor. If a cursor expires, rebuild the server cache without overwriting local drafts/outbox/blobs. Schema migrations preserve the queue; an incompatible API returns UPGRADE_REQUIRED and holds submissions rather than dropping them.
 
+## Planned M1b directory synchronization
+
+M1b extends the existing account-scoped database by forward migration, preserving note/outbox/lease data. Shared server directories do not change local account isolation. Direct REST and queued mutations use the same domain transaction, version, audit and commit-publication rules. Parent contacts/projects sync before dependent assignments. Block new assignments to archived contacts/projects; retain historical links.
+
+Track local edit revision separately from the acknowledged command. A delayed reply acknowledges only its own immutable command/revision; it cannot overwrite newer local values or mark a newer edit synced. Editing after send creates a fresh dependent command. Conflicts remain held until keep-server or revised-draft resolution.
+
+M1b acceptance must exercise a concurrent consistent bootstrap, paginated change recovery, archive tombstones and obsolete-cursor reset without losing pending edits. Also test lost-reply replay, changed-body rejection, parent ordering, delayed replies, account switching and existing M1a lease/auth/logout regressions. Use PostgreSQL and built-browser checks; observable behavior, not browser-lane count, is the criterion.
+
 ## Finalization after reconnect
 
-Sync succeeds into server DRAFT state. The manager reviews and finalizes online; no automatic posting. Finalization revalidates active account, latest document version, project lifecycle, stock, monetary totals and linked documents. Concurrent stock issues cannot overdraw available quantity. Reports display authoritative finalized totals and separate draft/pending counts.
+Financial document sync succeeds into server DRAFT state. M1b directory sync instead acknowledges permitted directory mutations; it performs no financial finalization. The manager reviews and finalizes online; no automatic posting. Finalization revalidates active account, latest document version, project lifecycle, stock, monetary totals and linked documents. Concurrent stock issues cannot overdraw available quantity. Reports display authoritative finalized totals and separate draft/pending counts.
 
 ## Attachment sequence
 

@@ -1,15 +1,19 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { type NestExpressApplication } from "@nestjs/platform-express";
-import type { NextFunction, Request, Response } from "express";
+import {
+  NodeAdapter,
+  type NestNodeApplication,
+  type NodeRequest,
+  type NodeResponse,
+} from "@nestjs/platform-node";
 import { AppModule } from "./app.module.js";
 
-export async function createApplication(): Promise<NestExpressApplication> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+export async function createApplication(): Promise<NestNodeApplication> {
+  const app = await NestFactory.create<NestNodeApplication>(AppModule, new NodeAdapter(), {
     logger: ["error", "warn"],
   });
   app.setGlobalPrefix("api");
-  app.use((_request: Request, response: Response, next: NextFunction) => {
+  app.use((_request: NodeRequest, response: NodeResponse, next: () => void) => {
     response.setHeader("Cache-Control", "no-store");
     next();
   });

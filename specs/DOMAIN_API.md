@@ -56,6 +56,18 @@ The M1a migration adds nullable `author_user_id` to `note_drafts`. Existing synt
 
 Use typed domain tables/check constraints for financial kinds, not arbitrary unvalidated JSON money records. Schema names are logical; implementation may split headers/lines while preserving invariants. Project transfers have two endpoints but post one atomic stock document; account balances remain project-specific.
 
+## Planned M1b directory rules
+
+Shared business data is accessible to full-session ADMIN and SUPERUSER accounts; private-note ownership does not apply. Actors come from the authenticated principal. Commit directory mutation, audit event, published change revision and command receipt (where applicable) atomically. Mutable records use expectedVersion; stale updates return 409 with current server representation.
+
+Projects start active and support active -> archived -> active only in M1b. Require a nonblank archive/reopen reason. Default lists show active projects; explicit filters expose archived records. Archive does not certify financial completion. Completion with stock/balance checks waits for the modules that supply those sources.
+
+Contacts have independent worker/supplier/owner flags, no login credentials and preserved history. Block new assignments to archived contacts/projects, including owner assignment and engagement endpoint changes. Existing assignments remain visible after archive. Suppliers stay company-wide until M3 purchasing documents relate them to projects.
+
+Engagement types: DAILY, HOURLY, QUANTITY, MONTHLY, FIXED_CONTRACT, MANUAL. Default rates are validated whole-toman strings; M2 owns calculations/earnings. Workers may span projects. For the same worker/project, periods cannot overlap regardless of type, including concurrent create/update. End dates are inclusive; omitted end means ongoing; reject end before start. Next-day adjacency is allowed, same-day endpoint overlap rejected. Enforce overlap and archive-assignment rules transactionally.
+
+Budgets use editable category labels with retained baseline and audited versioned changes; no category-management subsystem. M1b overview counts distinct server projects matching filters before pagination and distinct linked workers per project, labeled as including historical links. Engagement counts are separate. Pending local rows stay separate from server counts. Counts/drill-down share filters; cached snapshots show last-sync status. Financial charts and computed metrics wait for M2-M4 sources.
+
 ## Posting and corrections
 
 States: local draft -> server draft -> online finalized. Sync error/conflict are client transport states, not financial posting states. Only online finalization creates financial/stock effects. A finalized document may be reversed once; correction link, reason and original effects remain visible.
@@ -77,6 +89,7 @@ Invoice total = sum(round_half_up(quantity × unitPrice, 0)). Simple V1 invoice 
 Weighted-average issue value = issueQuantity × currentCarryingValue/currentQuantity, using decimal precision and stored line rounding. When issuing the entire remaining stock, issue the entire carrying value. Two concurrent movements lock source/destination balances in stable ID order. Block quantity below zero.
 
 Reports:
+
 - Procurement: invoices less supplier credit notes, separate from consumption.
 - Incurred project cost: net approved labor + net material consumption + other finalized expenses + explicit valuation adjustments. Internal stock transfers do not create company expense or cash.
 - Cash flow: owner receipts and refunds in, worker/supplier/expense payments and owner refunds out. No double count of allocation rows.
@@ -104,8 +117,9 @@ Prefix /api/v1. Auth responses and sensitive API data use Cache-Control: no-stor
 | GET /drafts/:id | implemented; require a full session and return only a draft owned by that user |
 | GET, POST /projects | paginated list/create; explicit lifecycle fields |
 | GET, PATCH /projects/:id | project detail/update with expectedVersion |
-| POST /projects/:id/lifecycle | complete/archive/reopen with server checks and reason |
-| GET, POST, PATCH /contacts and /materials | typed validated directories and soft archive |
+| POST /projects/:id/lifecycle | M1b archive/reopen only, expectedVersion and required reason; financial completion deferred |
+| GET, POST, PATCH /contacts | M1b typed directory and soft archive |
+| GET, POST, PATCH /materials | M3 typed material directory and soft archive |
 | GET, POST, PATCH /engagements | worker/project rates and type defaults |
 | GET, PUT /projects/:id/budgets | versioned budget lines and audit history |
 | GET, POST /documents | type-filtered paginated list/create draft with discriminated kind payload |
@@ -126,9 +140,11 @@ Prefix /api/v1. Auth responses and sensitive API data use Cache-Control: no-stor
 Every document kind must have a runtime-validated DTO and OpenAPI schema: EARNING, DEDUCTION, WORKER_PAYMENT, PURCHASE_INVOICE, SUPPLIER_PAYMENT, STOCK_RECEIPT, STOCK_ISSUE, STOCK_TRANSFER, STOCK_RETURN, SUPPLIER_RETURN, EXPENSE, EXPENSE_PAYMENT, OWNER_CLAIM, OWNER_RECEIPT, CONTRACT_AMENDMENT, REVERSAL. Reverse direction/refunds use explicit linked correction kinds, never negative values accepted into an unrelated normal form.
 
 Example earning draft:
+
 ```json
 {"commandId":"uuid","entityId":"uuid","expectedVersion":0,"kind":"EARNING","projectId":"uuid","businessDate":"2026-10-28","workerId":"uuid","engagementType":"DAILY","quantity":"3.000","rateToman":"1000000","description":"Work completed"}
 ```
+
 Server responds with id, version, DRAFT status and calculated amountToman "3000000". Caller totals are not trusted. Manually approved earnings replace quantity/rate with amountToman and required period/milestone description.
 
 Errors use {code,message,fieldErrors,requestId,currentVersion?}. 400 malformed, 401 login required, 403 forbidden, 404 missing, 409 stale version/duplicate mismatch/dependency/stock conflict, 422 business validation, 429 throttled. Do not automatically retry 409/422. Report pagination is cursor-based with bounded page sizes. Generate the exact OpenAPI field schemas during the relevant milestone before frontend integration; this document defines semantics, not a finished machine-readable OpenAPI file.

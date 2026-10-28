@@ -23,7 +23,7 @@
     "@sazeh/contracts": "workspace:*",
     "@nestjs/common": "12.3.2",
     "@nestjs/core": "12.3.2",
-    "@nestjs/platform-express": "12.3.2",
+    "@nestjs/platform-node": "12.3.2",
     "argon2": "0.45.1",
     "drizzle-orm": "0.45.4",
     "postgres": "3.4.9",
@@ -33,7 +33,6 @@
   },
   "devDependencies": {
     "@inquirer/prompts": "8.7.5",
-    "@types/express": "5.0.3",
     "drizzle-kit": "0.31.11"
   }
 }

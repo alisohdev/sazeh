@@ -5,4 +5,4 @@ minimumReleaseAgeExclude:
   - "@aws-sdk/client-s3@3.1158.0"
   - "@nestjs/common@12.3.2"
   - "@nestjs/core@12.3.2"
-  - "@nestjs/platform-express@12.3.2"
+  - "@nestjs/platform-node@12.3.2"

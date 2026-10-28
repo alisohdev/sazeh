@@ -55,7 +55,9 @@ An initial online login and successful workspace download are required. New devi
 
 Background synchronization while closed is best-effort only. Automatic foreground retry, reopen retry and a manual sync button are required. Storage failures must be visible. Browser eviction, clearing site data or losing the device can destroy unsynced work; request persistent storage and provide draft export. Never promise local storage is a backup.
 
-Closing a project requires review of pending drafts, remaining stock and balances; show blockers and support reopening by an admin with an audit reason. Archiving directories does not erase financial history.
+Financial completion requires pending-draft, stock and balance checks, implemented with the source modules. M1b supports active -> archived -> active only, with required archive/reopen reasons. Archive hides default active lists and does not certify financial completion. Archiving projects/contacts preserves history and existing assignments; block new assignments to archived records. Engagement periods for the same worker/project cannot overlap (inclusive ends, empty end ongoing); workers may span projects. M1b budget categories are editable labels. Materials arrive in M3; earnings/calculations in M2.
+
+M1b project information includes defined counts, filters and drill-down. Labor analytics arrive in M2, procurement/stock in M3 and combined financial reports in M4. Financial charts require authoritative source data; synthetic demos must not invent financial metrics.
 
 ## Success and nonfunctional acceptance
 

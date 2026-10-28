@@ -39,6 +39,30 @@ All fixtures are synthetic. Amounts below are toman. Run calculation tests witho
 | MOBILE01 | 360 px Android viewport and actual phone | All forms usable, focus visible, no page-wide overflow, tap targets adequate. |
 | OPS01 | Restore DB + referenced files to clean environment | Sample statements, attachments and finalized totals match backup. |
 
+## M1b planned acceptance
+
+These are implementation requirements, not completed verification. Use PostgreSQL API/concurrency checks and the built application for browser recovery checks. Observable behavior is required; fixed agent/browser-lane counts are not. Preserve the full M1a suite.
+
+| Test | Scenario | Required result |
+|---|---|---|
+| M1B-PROJ01 | Create/read/edit project, owner, dates, contract metadata and budgets | Fields round-trip; budget baseline/audit retained; validated toman strings and editable labels. |
+| M1B-PROJ02 | Two admins edit same version | Stale write returns 409 with current representation, no silent overwrite. |
+| M1B-PROJ03 | Archive/reopen with links | Reason required; IDs/history/links retained; default active list hides archive; archive filter shows it; reopen restores visibility without claiming financial completion. |
+| M1B-DIR01 | Create/edit/archive multi-role contacts | Shared records, optional phone, no new users or contact login; existing links stay visible. |
+| M1B-REL01 | Six types, engagement dates and concurrency | Multi-project worker allowed; same worker/project overlap rejected regardless of type; inclusive-end collision and ongoing overlap rejected; next-day adjacency allowed; reversed range rejected; concurrent writes cannot bypass rules; no earnings generated. |
+| M1B-REL02 | Assign archived project/contact | New assignments rejected through REST and queued commands, including owner/worker assignment and changed endpoints; historical links preserved. |
+| M1B-AUTH01 | Restricted/full sessions and forged actor | Anonymous/temporary-password denied; ADMIN/SUPERUSER share business data; session-derived audit actor commits with mutation. |
+| M1B-SYNC01 | Offline save/reload, parent links, duplicate/lost reply | Atomic local save; parents before children; retry creates one result; changed body with same ID returns 409 without extra effect. |
+| M1B-SYNC02 | Concurrent commits, paginated bootstrap/feed, archive and expired cursor | Snapshot/cursor consistent; no late commit missed; tombstones applied; reset/rebuild preserves drafts/outbox. |
+| M1B-SYNC03 | Stale edits and held old acknowledgment after newer edit | Reviewable conflict; keep-server or revised fresh command; delayed reply cannot overwrite newer edit or mark it synced; sent command ID/body immutable. |
+| M1B-SYNC04 | Expiry/account switch, tab closure and schema recovery | Commands never cross accounts; auth pause, epoch/lease fencing, pending-work review/export, retries and queue migration preserve M1a guarantees and M0 quarantine. |
+| M1B-MOBILE01 | Project/directory recovery at 360 px RTL | Usable labels/focus/errors, Jalali/ISO round-trip and digit normalization; no page-wide overflow; screenshots for UI review. |
+| M1B-INFO01 | Counts, filters and drill-down | Distinct filtered project count before pagination; distinct linked-worker count labeled as including history; engagement count separate; local pending rows separate; cached status visible; drill-down agrees; no fabricated financial metrics. |
+
+Retain AUTH01-04, SYNC01-04, SYNC07, LOCAL02, MOBILE01 and existing M1a API/browser regressions. UI evidence includes overview, archive/reopen, offline/conflict and mobile screenshots. Video is optional when screenshots cannot demonstrate behavior.
+
+M1b performance fixture: 10 active projects, 100 workers, 30 suppliers, five concurrent admin sessions; document owner/archive/engagement/budget counts, hardware, payloads, warmup and sample counts. Record at least 200 warmed samples per ordinary project/contact/engagement/budget list/write path under test; each p95 must be below 1,000 ms excluding external network latency. Measure sync dispatch-to-visible acknowledgment p50/p95 and auth/me context timings without a one-second sync gate or relative-regression percentage gate. Record cold starts/device timings separately. The full-V1 fixture below remains a later release gate.
+
 ## Report reconciliation
 
 For every report, aggregate only applicable finalized effects, incorporate reversals once and reconcile to drill-down rows. Ensure project/date/contact filters also apply to exports. Statement opening balance is all prior applicable effects; period activity plus opening equals closing. Cash vs cost uses distinct sources. Pending local and server drafts never enter final totals.

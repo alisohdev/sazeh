@@ -9,7 +9,7 @@ import {
   Req,
   Res,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { NodeResponse } from "@nestjs/platform-node";
 import {
   AdminStatusSchema,
   ChangePasswordSchema,
@@ -35,7 +35,7 @@ export class AuthController {
 
   @Get("csrf")
   @OpenRoute()
-  csrf(@Req() request: AuthenticatedRequest, @Res({ passthrough: true }) response: Response) {
+  csrf(@Req() request: AuthenticatedRequest, @Res({ passthrough: true }) response: NodeResponse) {
     const current = readCookie(request.headers.cookie, csrfCookie);
     const token = current && validCsrf(current) ? current : csrfToken();
     if (token !== current)
@@ -49,7 +49,7 @@ export class AuthController {
   async login(
     @Body() body: unknown,
     @Req() request: AuthenticatedRequest,
-    @Res({ passthrough: true }) response: Response,
+    @Res({ passthrough: true }) response: NodeResponse,
   ) {
     const parsed = LoginSchema.safeParse(body);
     if (!parsed.success)
@@ -80,7 +80,7 @@ export class AuthController {
   @OpenRoute()
   async refresh(
     @Req() request: AuthenticatedRequest,
-    @Res({ passthrough: true }) response: Response,
+    @Res({ passthrough: true }) response: NodeResponse,
   ) {
     const result = await this.identity.refresh(readCookie(request.headers.cookie, refreshCookie));
     response.append(
@@ -101,9 +101,9 @@ export class AuthController {
   @HttpCode(204)
   async logout(
     @Req() request: AuthenticatedRequest,
-    @Res({ passthrough: true }) response: Response,
+    @Res({ passthrough: true }) response: NodeResponse,
   ): Promise<void> {
-    const authorization = request.header("authorization");
+    const authorization = readHeader(request.header("authorization"));
     const accessToken = authorization?.startsWith("Bearer ")
       ? authorization.slice("Bearer ".length)
       : undefined;
@@ -127,7 +127,7 @@ export class AuthController {
   async changePassword(
     @Body() body: unknown,
     @Req() request: AuthenticatedRequest,
-    @Res({ passthrough: true }) response: Response,
+    @Res({ passthrough: true }) response: NodeResponse,
   ): Promise<void> {
     const parsed = ChangePasswordSchema.safeParse(body);
     if (!parsed.success)
@@ -223,11 +223,17 @@ function requirePrincipal(request: AuthenticatedRequest) {
   return request.principal;
 }
 
-function readCookie(header: string | undefined, name: string): string | undefined {
-  for (const part of header?.split(";") ?? []) {
-    const separator = part.indexOf("=");
-    if (separator < 0) continue;
-    if (part.slice(0, separator).trim() === name) return part.slice(separator + 1).trim();
+function readHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function readCookie(header: string | string[] | undefined, name: string): string | undefined {
+  for (const value of Array.isArray(header) ? header : [header ?? ""]) {
+    for (const part of value.split(";")) {
+      const separator = part.indexOf("=");
+      if (separator < 0) continue;
+      if (part.slice(0, separator).trim() === name) return part.slice(separator + 1).trim();
+    }
   }
   return undefined;
 }

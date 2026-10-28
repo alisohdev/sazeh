@@ -8,7 +8,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import type { Request } from "express";
+import type { NodeRequest } from "@nestjs/platform-node";
 import { validCsrf, verifyAccess } from "./tokens.js";
 import { IdentityService, type Principal } from "./identity.service.js";
 
@@ -20,7 +20,7 @@ export const OpenRoute = () => SetMetadata(OPEN, true);
 export const PasswordChangeRoute = () => SetMetadata(PASSWORD_CHANGE, true);
 export const SuperuserRoute = () => SetMetadata(SUPERUSER, true);
 
-export type AuthenticatedRequest = Request & { principal?: Principal };
+export type AuthenticatedRequest = NodeRequest & { principal?: Principal };
 
 @Injectable()
 export class AccessGuard implements CanActivate {
@@ -39,12 +39,12 @@ export class AccessGuard implements CanActivate {
     const isSuperuser =
       this.reflector.getAllAndOverride<boolean>(SUPERUSER, [handler, controller]) ?? false;
 
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method.toUpperCase())) {
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method?.toUpperCase() ?? "")) {
       this.assertSameOriginAndCsrf(request);
     }
     if (isOpen) return true;
 
-    const authorization = request.header("authorization");
+    const authorization = readHeader(request.header("authorization"));
     if (!authorization?.startsWith("Bearer ")) {
       throw new UnauthorizedException({ code: "AUTH_REQUIRED", message: "Sign in to continue" });
     }
@@ -60,7 +60,7 @@ export class AccessGuard implements CanActivate {
     return true;
   }
 
-  private assertSameOriginAndCsrf(request: Request): void {
+  private assertSameOriginAndCsrf(request: NodeRequest): void {
     const configured = process.env.AUTH_ALLOWED_ORIGIN;
     let allowed: string;
     try {
@@ -77,7 +77,7 @@ export class AccessGuard implements CanActivate {
       });
     }
 
-    if (request.header("origin") !== allowed) {
+    if (readHeader(request.header("origin")) !== allowed) {
       throw new ForbiddenException({
         code: "ORIGIN_REJECTED",
         message: "Request origin is not allowed",
@@ -90,7 +90,7 @@ export class AccessGuard implements CanActivate {
       });
     }
     const csrfCookie = readCookie(request.headers.cookie, "sazeh_csrf");
-    const csrfHeader = request.header("x-csrf-token");
+    const csrfHeader = readHeader(request.header("x-csrf-token"));
     if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader || !validCsrf(csrfCookie)) {
       throw new ForbiddenException({
         code: "CSRF_REJECTED",
@@ -100,11 +100,17 @@ export class AccessGuard implements CanActivate {
   }
 }
 
-function readCookie(header: string | undefined, name: string): string | undefined {
-  for (const part of header?.split(";") ?? []) {
-    const separator = part.indexOf("=");
-    if (separator < 0) continue;
-    if (part.slice(0, separator).trim() === name) return part.slice(separator + 1).trim();
+function readHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function readCookie(header: string | string[] | undefined, name: string): string | undefined {
+  for (const value of Array.isArray(header) ? header : [header ?? ""]) {
+    for (const part of value.split(";")) {
+      const separator = part.indexOf("=");
+      if (separator < 0) continue;
+      if (part.slice(0, separator).trim() === name) return part.slice(separator + 1).trim();
+    }
   }
   return undefined;
 }

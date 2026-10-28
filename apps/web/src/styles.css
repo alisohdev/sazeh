@@ -57,11 +57,18 @@ body {
   min-height: 100vh;
 }
 button,
-textarea {
+textarea,
+input {
   font: inherit;
 }
 button {
   cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #57928666;
+  outline-offset: 2px;
 }
 
 .page-shell {
@@ -167,6 +174,22 @@ label {
   font-size: 13px;
   font-weight: 600;
 }
+input {
+  width: 100%;
+  min-height: 46px;
+  margin: 0 0 17px;
+  border: 1px solid #d9dedb;
+  border-radius: 10px;
+  outline: none;
+  background: #fff;
+  color: var(--ink);
+  padding: 10px 13px;
+  direction: rtl;
+}
+input:focus {
+  border-color: #579286;
+  box-shadow: 0 0 0 3px #5792861c;
+}
 textarea {
   width: 100%;
   resize: vertical;
@@ -234,6 +257,173 @@ textarea:focus {
   margin: 11px 0 0;
   color: #276b5f;
   font-size: 12px;
+}
+.auth-shell {
+  max-width: 620px;
+}
+.auth-card {
+  max-width: 560px;
+  margin: 0 auto;
+}
+.auth-submit {
+  margin-top: 6px;
+}
+.legacy-export-control {
+  display: grid;
+  gap: 2px;
+  margin-top: 17px;
+  text-align: center;
+}
+.legacy-export-control span {
+  color: #929b9c;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.workspace-user {
+  margin: 3px 0 0;
+  color: #718087;
+  font-size: 11px;
+}
+.auth-warning {
+  border-right: 3px solid #bd7656;
+  background: #fff8f4;
+  padding: 10px 13px;
+  line-height: 1.8;
+}
+.sync-auth_required,
+.sync-retry_pending {
+  border-color: #e9dfc8;
+  background: #fffaf0;
+  color: #886d3f;
+}
+.sync-conflict,
+.sync-validation_failed {
+  border-color: #ead9d1;
+  background: #fff8f4;
+  color: #9b5f45;
+}
+.draft-problem {
+  display: block;
+  margin-top: 5px;
+  color: #9b5f45;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.admin-tools,
+.account-actions {
+  margin-top: 25px;
+  text-align: center;
+}
+.admin-card {
+  margin-top: 15px;
+  text-align: right;
+}
+.admin-list {
+  display: grid;
+  gap: 9px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.admin-list > li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffefa;
+  padding: 12px;
+}
+.admin-list > li > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.admin-list strong {
+  color: #304954;
+  font-size: 13px;
+}
+.admin-list span,
+.admin-list small {
+  color: #79878a;
+  font-size: 11px;
+}
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+.admin-actions .quiet-button {
+  padding: 7px;
+}
+.temporary-password {
+  display: grid;
+  gap: 8px;
+  margin-top: 15px;
+  border: 1px solid #dbe6e1;
+  border-radius: 11px;
+  background: #f2f7f4;
+  padding: 12px;
+  color: #3a7166;
+  font-size: 12px;
+  text-align: right;
+}
+.temporary-password p {
+  margin: 0;
+}
+.temporary-password code {
+  display: block;
+  overflow-wrap: anywhere;
+  border-radius: 7px;
+  background: #fffefa;
+  padding: 9px;
+  color: #17384f;
+  font-size: 13px;
+  user-select: all;
+}
+.danger-button {
+  min-height: 42px;
+  border: 1px solid #ead9d1;
+  border-radius: 9px;
+  background: #fff8f4;
+  color: #9b5f45;
+  padding: 8px 12px;
+}
+.modal-backdrop {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #102c3b66;
+  padding: 18px;
+}
+.departure-dialog {
+  width: min(100%, 520px);
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--paper);
+  padding: 22px;
+  box-shadow: 0 18px 55px #102c3b33;
+}
+.departure-dialog h2 {
+  margin-bottom: 8px;
+}
+.departure-dialog p {
+  color: #66777c;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.departure-actions {
+  display: grid;
+  gap: 9px;
+}
+.departure-actions .primary-button {
+  justify-content: center;
+  min-height: 44px;
 }
 .drafts-section {
   margin-top: 36px;
@@ -456,6 +646,10 @@ textarea:focus {
     flex-direction: column;
     gap: 9px;
     padding: 13px;
+  }
+  .admin-list > li {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .sync-badge {
     align-self: flex-start;

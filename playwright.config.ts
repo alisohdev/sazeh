@@ -14,7 +14,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "pnpm serve:local",
+    command: "node scripts/serve-local-ready.mjs",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: false,
     timeout: 180_000,

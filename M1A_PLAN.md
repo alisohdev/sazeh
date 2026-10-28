@@ -5,9 +5,9 @@
 - [x] Read the Principles section of the poteto-mode skill.
 - [x] Phase A: Frame the work with a falsifiable completion predicate, bounded scope, and rigor level.
 - [x] Phase B: Design atomic implementation units, put the riskiest unknowns first, and write this plan down.
-- [ ] Phase C: Treat each unit as an experiment, make the smallest change, verify it on the real artifact, and revert any change that does not advance the predicate.
-- [ ] Phase D: Keep the append-only decision trail in `decisions.tsv`.
-- [ ] Phase E: Verify the whole product against the completion predicate and hand it back.
+- [x] Phase C: Treat each unit as an experiment, make the smallest change, verify it on the real artifact, and revert any change that does not advance the predicate.
+- [x] Phase D: Keep the append-only decision trail in `decisions.tsv`.
+- [x] Phase E: Verify the whole product against the completion predicate and hand it back.
 
 ## Definition of done
 
@@ -41,10 +41,11 @@ The clean baseline passed `corepack pnpm verify:m0` on 28 October 2026. PostgreS
 
 ## Checkpoint results
 
-| Unit | Predicate | Result |
-| --- | --- | --- |
-| Baseline | The existing M0 checks pass before changes. | Passed with `corepack pnpm verify:m0`. |
-| Design | Two structurally distinct proposals are compared, and the chosen data shapes preserve M0 guarantees. | Passed. Chose per-user workspaces, an identity-owned session domain, private owned drafts, and quarantined anonymous M0 data. See `M1A_ARCHITECTURE.md`. |
-| API | Unauthorized direct draft access fails; password/session/account rules and user-scoped receipts pass API verification. | Not started. |
-| Browser | Two identities remain isolated; pending drafts survive expiry/logout choices; sync has one live owner and keeps RTL/mobile behavior. | Not started. |
-| Handoff | Complete checks pass, docs describe local Windows startup and legacy rows, and a review PR is available. | Not started. |
+| Unit     | Predicate                                                                                                                             | Result                                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline | The existing M0 checks pass before changes.                                                                                           | Passed with `corepack pnpm verify:m0`.                                                                                                                                                  |
+| Design   | Two structurally distinct proposals are compared, and the chosen data shapes preserve M0 guarantees.                                  | Passed. Chose per-user workspaces, an identity-owned session domain, private owned drafts, and quarantined anonymous M0 data. See `M1A_ARCHITECTURE.md`.                                |
+| API      | Direct unauthorized calls fail; login, forced change, reset, own password change, bearer/cookie logout, replay and live disable pass. | Passed in `corepack pnpm verify:m0`; protected draft author and user-scoped receipts are checked directly.                                                                              |
+| Browser  | Two identities remain isolated; expiry preserves drafts; logout recovery and sync outcome handling are verified at mobile width.      | Three production-browser tests passed. They cover cross-tab single delivery, same-browser account isolation, reload during logout, held errors, retry, and 360 px RTL without overflow. |
+| Docs     | Root ADR/API/offline specs match behavior; Windows startup avoids Program Files writes; migration preserves unowned M0 rows.          | Updated; formatter and generated Drizzle snapshot checks passed.                                                                                                                        |
+| Handoff  | Complete checks pass, docs describe local Windows startup and legacy rows, and a review PR is available.                              | `corepack pnpm verify:m0` passed; no preview was deployed. Preparing the review PR on `codex/m1a-auth-offline`.                                                                         |

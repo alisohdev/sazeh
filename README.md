@@ -1,6 +1,6 @@
-# Sazeh M0 — local application foundation
+# Sazeh — local-first application
 
-M0 is the local-first foundation for the construction application. It includes a React/Vite installable PWA, a NestJS API, PostgreSQL with Drizzle migrations, and S3-compatible development attachment storage backed by SeaweedFS. The only user workflow is an offline-capable note draft. Financial modules and authentication endpoints are not implemented.
+This repository contains the M0 local-first foundation and the M1a authentication vertical slice. It includes a React/Vite installable PWA, a NestJS API, PostgreSQL with Drizzle migrations, and S3-compatible development attachment storage backed by SeaweedFS. The application supports authenticated offline note drafts, superuser-managed admin accounts, and refreshable sessions. Financial modules and project management are not implemented.
 
 ## Prerequisites
 
@@ -14,25 +14,23 @@ Run commands below from the repository root in PowerShell.
 ## First-time setup
 
 ```powershell
-corepack enable
-corepack prepare pnpm@12.15.0 --activate
-pnpm --version
+corepack pnpm --version
 Copy-Item -LiteralPath .env.example -Destination .env
-pnpm install --frozen-lockfile
+corepack pnpm install --frozen-lockfile
 docker compose up -d --wait
-pnpm db:migrate
-pnpm db:seed
-pnpm storage:init
+corepack pnpm db:migrate
+corepack pnpm db:seed
+corepack pnpm storage:init
 ```
 
-The local-only values in `.env.example` are for a developer machine. Do not reuse them in Vercel or any shared environment. PostgreSQL listens on `127.0.0.1:15432`; SeaweedFS exposes its S3 API on `127.0.0.1:8333`. Compose persists database and object data in named Docker volumes. The `attachments` bucket is created with local development credentials.
+Use `corepack pnpm` directly in PowerShell. Do not run `corepack enable` from an elevated shell or write package-manager shims beside Node under Program Files. The local-only values in `.env.example` are for a developer machine. Replace `JWT_SECRET` with a new random value and configure the exact browser-facing origin in every shared environment. The API ignores forwarded IP headers and uses the direct socket address for login throttling. PostgreSQL listens on `127.0.0.1:15432`; SeaweedFS exposes its S3 API on `127.0.0.1:8333`. Compose persists database and object data in named Docker volumes. The `attachments` bucket is created with local development credentials.
 
-`pnpm db:migrate` applies checked-in Drizzle SQL migrations and is safe to repeat. `pnpm db:seed` inserts one synthetic draft through the same idempotent command path and is restricted to `APP_ENV=local`. `pnpm storage:init` creates the local bucket if needed. None of these run implicitly when the API starts.
+`corepack pnpm db:migrate` applies checked-in Drizzle SQL migrations and is safe to repeat. `corepack pnpm db:seed` inserts the synthetic M0 draft as explicitly unowned legacy data and is restricted to `APP_ENV=local`. It does not use the authenticated API or assign an owner. `corepack pnpm storage:init` creates the local bucket if needed. None of these run implicitly when the API starts.
 
 ## Run the application
 
 ```powershell
-pnpm dev
+corepack pnpm dev
 ```
 
 - PWA: <http://127.0.0.1:5173>
@@ -44,39 +42,45 @@ Vite forwards `/api/*` requests to NestJS on port 3000. Readiness checks Postgre
 
 The service worker caches the app shell only; it does not cache API responses. Drafts remain in IndexedDB across reloads. The page includes an export action for drafts that have not synchronized.
 
+The local browser origin must match `AUTH_ALLOWED_ORIGIN` exactly (`http://127.0.0.1:5173` by default). The API rejects unsafe requests without that origin and a CSRF cookie/header pair. The local cookie uses the localhost HTTP exception; shared environments must use HTTPS. M1a login throttling uses the direct socket address and ignores forwarded IP headers. Behind a proxy, requests share the proxy's throttle bucket until a future release adds a trusted proxy allowlist.
+
 The Persian interface uses the supplied, self-hosted IRANSansXFaNum WOFF2 files. The PWA precaches these fonts for offline use. The archive did not include a project license file or code; retain the FontIran project license with any published deployment.
 
 The migration also creates the minimal `users` table needed by the delivery plan. To create the first local superuser record, run:
 
 ```powershell
-pnpm bootstrap:superuser
+corepack pnpm bootstrap:superuser
 ```
 
-The command asks for a username and display name, reads the password without echoing it, stores only an Argon2id hash, and refuses to create another superuser. M0 intentionally has no login or session endpoints, so this record is not yet used by the PWA.
+The command asks for a username and display name, reads the password without echoing it, stores only an Argon2id hash, and refuses to create another superuser. Sign in with this account in the PWA. A superuser creates ordinary admin accounts in the application; the API generates and displays each temporary password once. New and reset passwords must be changed before the account can access drafts or admin screens. No public registration or worker accounts exist.
+
+Authenticated drafts are visible only to their author. The server records the author from the live session, and idempotency receipts are keyed by user and command. Every protected request checks the current database session and account status, so logout, password reset, session revocation, or disabling an account takes effect before an access JWT expires.
+
+Each browser workspace uses a separate IndexedDB database derived from environment, origin, and user ID. Access tokens stay in memory. The old anonymous `sazeh-m0-drafts` database is never opened for sync or imported into an account. An explicit legacy export downloads old anonymous M0 drafts marked unowned; the export cannot be uploaded automatically. M0 server seed drafts also remain ownerless and are not returned by the authenticated draft API.
 
 ## Verify M0
 
-Stop `pnpm dev` before running the complete browser suite; verification starts its own built API and PWA servers.
+Stop `corepack pnpm dev` before running the complete browser suite; verification starts its own built API and PWA servers.
 
 ```powershell
-pnpm lint
-pnpm typecheck
-pnpm format:check
-pnpm verify:database
-pnpm verify:bootstrap
-pnpm build
-pnpm storage:verify
-pnpm verify:api
-pnpm verify:browser
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm format:check
+corepack pnpm verify:database
+corepack pnpm verify:bootstrap
+corepack pnpm build
+corepack pnpm storage:verify
+corepack pnpm verify:api
+corepack pnpm verify:browser
 ```
 
 Or run all checks in sequence:
 
 ```powershell
-pnpm verify:m0
+corepack pnpm verify:m0
 ```
 
-The API proof sends concurrent retries for one command, checks that reusing its ID with changed content and reusing its entity ID both return `409`, restarts NestJS, retries the command again, reads the saved draft, and confirms PostgreSQL contains exactly one draft and one receipt. The browser proof uses the production build: it installs the service worker, saves while offline, reloads offline, reconnects, syncs through the local API proxy, and reads the resulting server draft.
+The API proof uses direct HTTP calls to verify anonymous access denial, first-login restrictions, superuser-only admin operations, reset, password change, cookie and bearer logout, session revocation, refresh replay, immediate account disable, exact origin/CSRF checks, login throttling, server-selected draft authors, private draft reads, user-scoped receipt replay, duplicate prevention, and legacy M0 quarantine. The browser proof uses the production build and authenticated fixtures. It saves offline, expires the server session, confirms that sync pauses without deleting the command, syncs one draft across two tabs after reauthentication, and checks held conflicts, validation failures, timed transient retries, and duplicate prevention. It exports pending work before an account switch and checks that the next user cannot see or upload it. The test reads the resulting rows from PostgreSQL and checks their owners.
 
 ## Version pins
 
@@ -98,8 +102,8 @@ The configuration is prepared for two Vercel projects backed by this same reposi
 
 1. Set the API project's Root Directory to `apps/api`; it uses `apps/api/vercel.json` and the `api/[...path].ts` NestJS adapter.
 2. Set the frontend project's Root Directory to `apps/web`; enable Vercel's option to include source files outside that directory so both projects can install the root pnpm workspace.
-3. Use Node.js 24.x and pnpm 12.15.0 for both projects. Set `APP_ENV=preview` on the preview API, enable deployment protection on both projects, and configure runtime `DATABASE_URL` with a pooled URL for that preview's PostgreSQL branch.
-4. Create one isolated PostgreSQL branch per pull request. Set `DATABASE_URL` to its pooled URL and `DATABASE_URL_UNPOOLED` to its direct URL for explicit migrations; `pnpm db:migrate` prefers `DATABASE_URL_UNPOOLED`. Run it before routing frontend traffic to the API. Do not share the production database or use a production credential in a preview.
+3. Use Node.js 24.x and pnpm 12.15.0 for both projects. Set `APP_ENV=preview` and a fresh `JWT_SECRET` on the preview API, set `AUTH_ALLOWED_ORIGIN` to the exact paired frontend URL, and enable deployment protection on both projects. Configure runtime `DATABASE_URL` with a pooled URL for that preview's PostgreSQL branch.
+4. Create one isolated PostgreSQL branch per pull request. Set `DATABASE_URL` to its pooled URL and `DATABASE_URL_UNPOOLED` to its direct URL for explicit migrations; `corepack pnpm db:migrate` prefers `DATABASE_URL_UNPOOLED`. Run it before routing frontend traffic to the API. Do not share the production database or use a production credential in a preview.
 5. Deploy the API preview first. Copy its exact immutable deployment URL from Vercel's deployment details, then generate the frontend's external `/api/*` rewrite:
 
    ```powershell
@@ -108,11 +112,11 @@ The configuration is prepared for two Vercel projects backed by this same reposi
 
    The command writes `apps/web/vercel.json` with that exact API origin. Deploy the frontend from the generated local source. Regenerate it for each paired API deployment; do not point it at a moving production or branch alias.
 
-The workspace has no Vercel project linked to it and no preview PostgreSQL branch or credentials configured, so no preview deployment or URL is claimed. Preview attachment storage is not provisioned by M0; configure a private S3-compatible service if preview attachment work is later added. Authentication endpoints also remain a later milestone: deployment protection is required for any unauthenticated M0 preview API.
+The workspace has no Vercel project linked to it and no preview PostgreSQL branch or credentials configured, so no preview deployment or URL is claimed. Do not deploy a preview until it has a paired exact frontend origin, fresh auth secrets, isolated data, and application-level authentication. Preview attachment storage is not provisioned; configure a private S3-compatible service before attachment work is added.
 
 ## Scope and planning pack
 
-M0 does not include financial records, project administration, authentication routes, attachment upload endpoints, or production deployment. The one-time bootstrap command prepares the minimal user table only.
+The M0 baseline did not include financial records, project administration, authentication routes, attachment upload endpoints, or production deployment. M1a adds authentication and admin account management; it does not add financial or project-management workflows. The one-time bootstrap command prepares the first superuser account.
 
 The planning pack remains available:
 
@@ -127,4 +131,4 @@ The planning pack remains available:
 9. [Implementation brief](IMPLEMENTATION_BRIEF.md)
 10. [Source references](SOURCES.md)
 
-The design synthesis for this milestone is recorded in [M0_ARCHITECTURE.md](M0_ARCHITECTURE.md), with the implementation checklist in [M0_PLAN.md](M0_PLAN.md).
+The design syntheses are recorded in [M0_ARCHITECTURE.md](M0_ARCHITECTURE.md) and [M1A_ARCHITECTURE.md](M1A_ARCHITECTURE.md), with implementation checklists in [M0_PLAN.md](M0_PLAN.md) and [M1A_PLAN.md](M1A_PLAN.md).

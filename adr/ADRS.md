@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Date: 28 October 2026. Product-owner-confirmed choices and proposed engineering details are distinguished below. These records are design decisions, not evidence of implementation or client sign-off.
+Date: 28 October 2026. Product-owner-confirmed choices and engineering decisions are distinguished below. Status labels track implementation, not client sign-off.
 
 ## ADR 001 Single company modular monolith
 
@@ -16,11 +16,11 @@ Date: 28 October 2026. Product-owner-confirmed choices and proposed engineering 
 
 ## ADR 002 JWT with revocable server sessions
 
-**Status:** JWT and role hierarchy accepted; session implementation proposed.
+**Status:** Accepted and implemented for M1a.
 
-**Decision:** Short-lived access JWT kept in browser memory; rotating opaque refresh credential in a Secure, HttpOnly, SameSite=Lax cookie on the browser-facing app origin. Local localhost HTTP exception only for development. Access token contains subject/session ID, expiry, issuer and audience. Validate signature, algorithm allowlist and active session/account on every protected request. Password hashes use Argon2id with calibrated parameters. Never persist access/refresh tokens in localStorage or IndexedDB.
+**Decision:** Keep a 15-minute access JWT in browser memory. Rotate an opaque refresh credential in a seven-day, HttpOnly, SameSite=Lax cookie on the browser-facing app origin. Set Secure except for configured loopback HTTP in local development. The access token carries subject, session ID, credential version, expiry, issuer and audience. Pin signature verification to HS256 and check the user and session on every protected request. Store password hashes with Argon2id. Never persist access or refresh credentials in localStorage or IndexedDB.
 
-Use a session table and token-family reuse detection. Serialize refresh across tabs; lost refresh responses may require re-login, not weakened reuse checks. Change/reset password and disabling revoke sessions. First-password-change sessions can only change password or log out. Superuser alone creates, resets or disables admins. Superuser recovery is an operator-only CLI/runbook action, not an admin API.
+Use a session table and retain hashes for every refresh-token generation through session expiry. Reject and revoke the family when a consumed token is replayed. Serialize cookie operations across tabs with a Web Lock held through the durable identity transition; do not let an expiring owner lease move a live response between tabs. A lost refresh response may require re-login, not weaker replay checks. Password change, reset, logout, session revocation and disable revoke online access. A temporary-password session can only change its password or log out. Only a superuser can create, reset, disable or reactivate admin accounts. Bootstrap and recovery stay in the operator CLI, not a registration endpoint.
 
 **Alternatives:** Fully stateless JWT cannot enforce prompt revocation. Plain server sessions would also fit but JWT was requested. Browser localStorage tokens increase script-accessible credential exposure.
 
@@ -50,11 +50,11 @@ Backdated business dates are allowed with posting timestamp preserved. They do n
 
 ## ADR 005 Offline drafts with explicit synchronization
 
-**Status:** Accepted behavior; protocol proposed.
+**Status:** Accepted and implemented for M1a note drafts; later entities remain proposed.
 
-**Decision:** Service worker caches app shell; IndexedDB stores selected project snapshots, local drafts, an outbox and attachment blobs. The UI transactionally saves draft + outbox before showing local success. An authenticated foreground sync runner uploads in dependency order, using stable UUID command IDs and expected record versions. Finalization is a separate online action; syncing never silently posts finance.
+**Decision:** The service worker caches the app shell. M1a stores note drafts and an outbox in a separate IndexedDB database for each environment, origin and user. A local draft and its immutable command commit in one transaction before the UI reports success. The authenticated foreground runner uses stable UUID command IDs. It permits one same-tab run and one renewable IndexedDB lease owner across tabs. A lost lease or changed identity stops dispatch and acknowledgment. Later entities can add dependency order and expected record versions. Finalization remains a separate online action.
 
-Cache identity scopes include environment, deployment origin and user. There is no offline permission escalation. Conflicts are not last-write-wins. Review competing changes and submit a new explicit resolution. Failed entries remain visible and retryable; parents block dependent entries but not independent ones.
+Cache identity scopes include environment, exact deployment origin and user. The origin control database coordinates the shared refresh cookie and account departure. A Web Lock serializes lifecycle changes through completion; logout takes an exclusive workspace activity lock before showing the pending-work decision. The selected keep/discard action is journaled before any deletion, and reload resumes the same decision. The app never imports the old anonymous M0 browser database. It provides a read-only export that labels those rows as unowned. There is no offline permission escalation. Expired authentication pauses sync, explicit revocation/disable locks the workspace, conflicts stay held, and transient network, 429 and server failures retry on a timer.
 
 **Alternatives:** Online-only fails the site requirement. Offline financial finalization requires considerably harder reconciliation and was rejected by the user. Background Sync alone has inconsistent browser support [S3].
 

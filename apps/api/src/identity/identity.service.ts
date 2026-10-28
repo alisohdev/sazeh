@@ -13,7 +13,13 @@ import argon2 from "argon2";
 import { and, eq, isNull, lte, sql } from "drizzle-orm";
 import { DATABASE, type Database } from "../db/database.module.js";
 import { accountAudit, loginBuckets, refreshTokens, sessions, users } from "../db/schema.js";
-import { opaqueToken, SESSION_SECONDS, signAccess, verifyAccess, type Claims } from "./tokens.js";
+import {
+  opaqueToken,
+  SESSION_SECONDS,
+  signAccess,
+  verifyAccessForLogout,
+  type Claims,
+} from "./tokens.js";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type QueryDatabase = Database | Transaction;
@@ -274,7 +280,7 @@ export class IdentityService {
     let claims: Claims | undefined;
     if (accessToken) {
       try {
-        claims = verifyAccess(accessToken);
+        claims = verifyAccessForLogout(accessToken);
       } catch {
         return { clearRefreshCookie: !accessToken && Boolean(token), sessionMismatch: false };
       }

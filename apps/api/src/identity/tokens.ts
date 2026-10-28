@@ -51,6 +51,14 @@ export function equalSecret(a: string, b: string): boolean {
 }
 
 export function verifyAccess(token: string): Claims {
+  return readAccessToken(token, false);
+}
+
+export function verifyAccessForLogout(token: string): Claims {
+  return readAccessToken(token, true);
+}
+
+function readAccessToken(token: string, allowExpired: boolean): Claims {
   try {
     const [header, body, mac, extra] = token.split(".");
     if (!header || !body || !mac || extra || token.length > 2048) throw new Error();
@@ -61,7 +69,11 @@ export function verifyAccess(token: string): Claims {
     if (!equalSecret(mac, signature(`${header}.${body}`))) throw new Error();
     const claims = ClaimsSchema.parse(JSON.parse(Buffer.from(body, "base64url").toString()));
     const now = Math.floor(Date.now() / 1000);
-    if (claims.exp <= now || claims.iat > now + 30 || claims.exp - claims.iat !== ACCESS_SECONDS)
+    if (
+      (!allowExpired && claims.exp <= now) ||
+      claims.iat > now + 30 ||
+      claims.exp - claims.iat !== ACCESS_SECONDS
+    )
       throw new Error();
     return claims;
   } catch {

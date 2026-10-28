@@ -61,7 +61,7 @@ export function openDraftWorkspace(
   const sending = new Set<string>();
   let syncFlight: Promise<void> | undefined;
   let activeRun: AbortController | undefined;
-  let retryTimer: number | undefined;
+  let syncWakeTimer: number | undefined;
   let closed = false;
 
   const unsubscribeControl = workspaceControl.subscribe(() => {
@@ -91,7 +91,7 @@ export function openDraftWorkspace(
 
   function notifyPeers(): void {
     for (const listener of listeners) listener();
-    void scheduleRetryWakeup();
+    void scheduleSyncWakeup();
   }
 
   const repository = {
@@ -173,7 +173,7 @@ export function openDraftWorkspace(
       const run = runSync();
       syncFlight = run.finally(() => {
         syncFlight = undefined;
-        void scheduleRetryWakeup();
+        void scheduleSyncWakeup();
       });
       return syncFlight;
     },
@@ -217,7 +217,7 @@ export function openDraftWorkspace(
 
     async close(): Promise<void> {
       closed = true;
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      if (syncWakeTimer !== undefined) window.clearTimeout(syncWakeTimer);
       activeRun?.abort(new Error("Draft workspace closed"));
       unsubscribeControl();
       const store = await databaseReady;
@@ -488,27 +488,31 @@ export function openDraftWorkspace(
     );
   }
 
-  async function scheduleRetryWakeup(): Promise<void> {
+  async function scheduleSyncWakeup(): Promise<void> {
     if (closed) return;
-    if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-    retryTimer = undefined;
+    if (syncWakeTimer !== undefined) window.clearTimeout(syncWakeTimer);
+    syncWakeTimer = undefined;
     try {
       const store = await db();
       const entries = await store.outbox.toArray();
+      const now = Date.now();
+      const lease = await store.leases.get("sync");
+      const leaseReadyAt = lease && lease.expiresAt > now ? lease.expiresAt : now;
       let earliest = Number.POSITIVE_INFINITY;
       for (const entry of entries) {
         const draft = await store.drafts.get(entry.entityId);
-        if (draft?.syncState === "RETRY_PENDING" && entry.retryAt > 0) {
-          earliest = Math.min(earliest, entry.retryAt);
-        }
+        if (!draft || (draft.syncState !== "PENDING" && draft.syncState !== "RETRY_PENDING"))
+          continue;
+        const retryReadyAt = entry.retryAt > now ? entry.retryAt : now;
+        earliest = Math.min(earliest, Math.max(retryReadyAt, leaseReadyAt));
       }
       if (!Number.isFinite(earliest)) return;
-      retryTimer = window.setTimeout(
+      syncWakeTimer = window.setTimeout(
         () => {
-          retryTimer = undefined;
+          syncWakeTimer = undefined;
           if (navigator.onLine) void repository.syncPending();
         },
-        Math.max(0, earliest - Date.now()),
+        Math.max(0, earliest - now),
       );
     } catch {
       return;

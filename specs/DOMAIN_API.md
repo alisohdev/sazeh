@@ -16,6 +16,8 @@ Access JWTs use HS256, the `sazeh-api` issuer and `sazeh-browser` audience. They
 
 Admin creation and password reset return one temporary password. The API stores only an Argon2id hash and sets `mustChangePassword`. Until the admin changes that password, protected application routes return 403. Password change, reset, account disable, session revocation, logout and refresh-token replay invalidate the affected online session immediately.
 
+Logout verifies signed bearer claims after access expiry so an expired bearer with its valid refresh cookie still revokes the session. If a stale tab's bearer belongs to a different session than the refresh cookie, the API revokes only that bearer session and leaves the cookie intact.
+
 The server records `author_user_id` from the authenticated principal. It rejects author fields in the command body. Draft reads return only a row owned by the current user. Authenticated command receipts use (`user_id`, `command_id`) as their key, so one user's retry cannot replay another user's response.
 
 The M1a migration adds nullable `author_user_id` to `note_drafts`. Existing synthetic M0 rows keep a NULL author and are inaccessible through the protected API. Existing global M0 command receipts remain legacy data and are not consulted for authenticated retries. The application never adopts old rows on login. The browser provides an explicit read-only export for the prior anonymous IndexedDB database and labels each exported row as unowned.

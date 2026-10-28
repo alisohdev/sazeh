@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type AddressInfo } from "node:net";
 import { once } from "node:events";
@@ -16,6 +16,7 @@ import {
   sessions,
   users,
 } from "../src/db/schema.js";
+import { ACCESS_SECONDS } from "../src/identity/tokens.js";
 
 type LoginResult = {
   accessToken: string;
@@ -328,6 +329,35 @@ async function main(): Promise<void> {
       204,
     );
     const normalB = await adminB.login(createdB.admin.username, newPasswordB);
+    const staleTab = makeClient(base, origin);
+    await staleTab.bootstrapCsrf();
+    const staleSession = await staleTab.login(createdA.admin.username, newPasswordA);
+    const staleTabCookie = staleTab.refreshCookie;
+    const activeAccountCookie = adminB.refreshCookie;
+    assert(staleSession.accessToken && staleTabCookie && activeAccountCookie);
+    staleTab.refreshCookie = activeAccountCookie;
+    const staleTabLogout = await staleTab.request(
+      "/api/v1/auth/logout",
+      { method: "POST", body: "{}" },
+      { authenticated: false, accessToken: staleSession.accessToken },
+    );
+    assert.equal(staleTabLogout.status, 204);
+    assert.equal(
+      staleTabLogout.headers.get("x-session-mismatch"),
+      "true",
+      "a stale tab detects that its bearer belongs to another session",
+    );
+    assert.equal(
+      staleTab.refreshCookie,
+      activeAccountCookie,
+      "stale-tab logout leaves the active account refresh cookie untouched",
+    );
+    assert.equal(
+      (await adminB.refresh()).status,
+      200,
+      "stale-tab logout does not revoke the other account's session",
+    );
+    staleTab.refreshCookie = staleTabCookie;
     const commandB = draftCommand(commandA.commandId, randomUUID(), "M1a authenticated draft B");
     verificationDrafts.push(commandB.entityId);
     const createdDraftB = await adminB.request("/api/v1/drafts", {
@@ -448,6 +478,23 @@ async function main(): Promise<void> {
       (await adminA.request("/api/v1/auth/me")).status,
       401,
       "bearer-only logout revokes its unexpired access token",
+    );
+
+    const expiredLogoutLogin = await adminA.login(createdA.admin.username, newPasswordAfterReset);
+    assert(expiredLogoutLogin.accessToken && adminA.refreshCookie);
+    const expiredLogout = await adminA.request(
+      "/api/v1/auth/logout",
+      { method: "POST", body: "{}" },
+      {
+        authenticated: false,
+        accessToken: makeExpiredAccessToken(expiredLogoutLogin.accessToken),
+      },
+    );
+    assert.equal(expiredLogout.status, 204, "logout accepts a signed expired bearer token");
+    assert.equal(
+      (await adminA.refresh()).status,
+      401,
+      "expired bearer logout revokes the session and clears its valid refresh cookie",
     );
 
     const revokeLogin = await adminA.login(createdA.admin.username, newPasswordAfterReset);
@@ -647,6 +694,7 @@ function makeClient(base: string, origin: string) {
         authenticated?: boolean;
         origin?: string | null;
         includeCsrfHeader?: boolean;
+        accessToken?: string;
       } = {},
     ) {
       const headers = new Headers(init.headers);
@@ -664,8 +712,9 @@ function makeClient(base: string, origin: string) {
         ["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase())
       )
         headers.set("x-csrf-token", csrf);
-      if (options.authenticated !== false && accessToken)
-        headers.set("authorization", `Bearer ${accessToken}`);
+      const bearerToken =
+        options.accessToken ?? (options.authenticated !== false ? accessToken : undefined);
+      if (bearerToken) headers.set("authorization", `Bearer ${bearerToken}`);
       const response = await fetch(`${base}${path}`, { ...init, headers });
       for (const setCookie of getSetCookies(response)) {
         const match = /^sazeh_refresh=([^;]*)/.exec(setCookie);
@@ -731,6 +780,19 @@ function draftCommand(commandId: string, entityId: string, text: string) {
     kind: "CREATE_NOTE_DRAFT",
     text,
   };
+}
+
+function makeExpiredAccessToken(accessToken: string): string {
+  const [header, body, signature, extra] = accessToken.split(".");
+  assert(header && body && signature && !extra, "fixture access token is a JWT");
+  const claims = JSON.parse(Buffer.from(body, "base64url").toString()) as Record<string, unknown>;
+  const issuedAt = Math.floor(Date.now() / 1000) - ACCESS_SECONDS - 1;
+  claims.iat = issuedAt;
+  claims.exp = issuedAt + ACCESS_SECONDS;
+  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const content = `${header}.${payload}`;
+  const mac = createHmac("sha256", process.env.JWT_SECRET!).update(content).digest("base64url");
+  return `${content}.${mac}`;
 }
 
 async function legacyDraftId(databaseUrl: string): Promise<string> {

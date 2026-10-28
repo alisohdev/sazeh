@@ -45,6 +45,84 @@ test("reloading a peer tab during a sync recovers the single pending command", a
   await expect(peer.getByText("همگام شد")).toBeVisible();
 });
 
+test("a surviving tab retries after the syncing tab closes with its request in flight", async ({
+  page,
+  context,
+}) => {
+  const username = requiredEnv("M1A_TEST_USERNAME");
+  const password = requiredEnv("M1A_TEST_PASSWORD");
+  const marker = `M1A_BROWSER_CLOSED_SYNC::${requiredEnv("M1A_TEST_RUN_ID")}`;
+  let releaseRequest!: () => void;
+  let resolveSyncingPage!: (page: Page) => void;
+  const heldRequest = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  const syncingPage = new Promise<Page>((resolve) => {
+    resolveSyncingPage = resolve;
+  });
+  let heldFirstRequest = false;
+  let firstRequestAt = 0;
+  let postCount = 0;
+  let forwardedCount = 0;
+
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto("/");
+  await page.getByLabel("نام کاربری").fill(username);
+  await page.getByLabel("گذرواژه", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByLabel("متن یادداشت")).toBeVisible();
+
+  const peer = await context.newPage();
+  await peer.goto("/");
+  await expect(peer.getByLabel("متن یادداشت")).toBeVisible();
+  await context.setOffline(true);
+  await page.getByLabel("متن یادداشت").fill(marker);
+  await page.getByRole("button", { name: "ذخیرهٔ یادداشت" }).click();
+  await expect(page.getByText(marker)).toBeVisible();
+  await expect(peer.getByText(marker)).toBeVisible();
+
+  await context.route("**/api/v1/drafts", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") return route.continue();
+    const body = request.postDataJSON() as { text?: unknown } | null;
+    if (body?.text !== marker) return route.continue();
+    postCount += 1;
+    if (!heldFirstRequest) {
+      heldFirstRequest = true;
+      firstRequestAt = Date.now();
+      resolveSyncingPage(request.frame().page());
+      await heldRequest;
+      try {
+        await route.abort("failed");
+      } catch {
+        return;
+      }
+      return;
+    }
+    forwardedCount += 1;
+    await route.continue();
+  });
+
+  await context.setOffline(false);
+  await Promise.all(
+    [page, peer].map((tab) => tab.evaluate(() => window.dispatchEvent(new Event("online")))),
+  );
+  const owner = await syncingPage;
+  const survivor = owner === page ? peer : page;
+  await survivor.evaluate(() => window.dispatchEvent(new Event("online")));
+
+  const closed = owner.waitForEvent("close");
+  const closing = owner.close();
+  await closed;
+  releaseRequest();
+  await closing;
+
+  await expect(survivor.getByText("همگام شد", { exact: true })).toBeVisible({ timeout: 45_000 });
+  expect(Date.now() - firstRequestAt).toBeGreaterThanOrEqual(25_000);
+  expect(postCount).toBe(2);
+  expect(forwardedCount).toBe(1);
+});
+
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required for browser verification.`);

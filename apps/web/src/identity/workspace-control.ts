@@ -220,7 +220,7 @@ export const workspaceControl = {
       { mode: "exclusive", ifAvailable: true },
       async (held) => {
         const current = await this.state();
-        if (!held) {
+        if (!held && (current.phase === "departing" || current.phase === "logout-pending")) {
           result = { status: "another-tab", state: current };
           return;
         }

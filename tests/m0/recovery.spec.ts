@@ -1,5 +1,46 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("startup waits for an ordinary refresh without reporting another tab's logout", async ({
+  page,
+  context,
+}) => {
+  let releaseRefresh!: () => void;
+  let refreshStarted!: () => void;
+  const heldRefresh = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    refreshStarted = resolve;
+  });
+  await page.route("**/api/v1/auth/refresh", async (route) => {
+    refreshStarted();
+    await heldRefresh;
+    await route.continue();
+  });
+  await page.goto("/");
+  await started;
+  const peer = await context.newPage();
+  await peer.goto("/");
+  try {
+    await expect
+      .poll(() =>
+        peer.evaluate(async () => {
+          const locks = await navigator.locks.query();
+          return locks.pending?.some((lock) => lock.name?.startsWith("sazeh-m1a-lifecycle-"));
+        }),
+      )
+      .toBe(true);
+  } finally {
+    releaseRefresh();
+  }
+  await expect(peer.getByLabel("نام کاربری")).toBeVisible();
+  await expect(
+    peer.getByText(
+      "تعیین تکلیف خروج در برگهٔ دیگری باز است. پس از بسته‌شدن آن، اینجا را دوباره بررسی کنید.",
+    ),
+  ).toHaveCount(0);
+});
+
 test("reloading a peer tab during a sync recovers the single pending command", async ({
   page,
   context,

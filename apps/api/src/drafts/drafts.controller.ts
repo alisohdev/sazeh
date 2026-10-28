@@ -8,12 +8,14 @@ import {
   NotFoundException,
   Param,
   Post,
+  Req,
 } from "@nestjs/common";
 import { DraftCreateCommandSchema } from "@sazeh/contracts";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { ZodError } from "zod";
 import { DATABASE, type Database } from "../db/database.module.js";
 import { noteDrafts } from "../db/schema.js";
+import type { AuthenticatedRequest } from "../identity/access.guard.js";
 import { createDraft } from "./create-draft.js";
 
 @Controller("v1/drafts")
@@ -21,15 +23,13 @@ export class DraftsController {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
   @Post()
-  async create(@Body() body: unknown) {
-    if (process.env.APP_ENV !== "local" && process.env.APP_ENV !== "preview") {
-      throw new ForbiddenException({
-        code: "AUTH_REQUIRED",
-        message: "Draft creation requires an authenticated account",
-      });
-    }
+  async create(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     try {
-      return await createDraft(this.db, DraftCreateCommandSchema.parse(body));
+      return await createDraft(
+        this.db,
+        requirePrincipal(request),
+        DraftCreateCommandSchema.parse(body),
+      );
     } catch (error) {
       if (error instanceof ZodError) {
         throw new BadRequestException({
@@ -42,19 +42,36 @@ export class DraftsController {
   }
 
   @Get(":id")
-  async read(@Param("id") id: string) {
+  async read(@Param("id") id: string, @Req() request: AuthenticatedRequest) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
       throw new BadRequestException({ code: "INVALID_ID", message: "Draft ID must be a UUID" });
     }
-    const [draft] = await this.db.select().from(noteDrafts).where(eq(noteDrafts.id, id)).limit(1);
+    const [draft] = await this.db
+      .select()
+      .from(noteDrafts)
+      .where(
+        and(eq(noteDrafts.id, id), eq(noteDrafts.authorUserId, requirePrincipal(request).userId)),
+      )
+      .limit(1);
     if (!draft)
       throw new NotFoundException({ code: "DRAFT_NOT_FOUND", message: "Draft was not found" });
     return {
       id: draft.id,
+      authorUserId: draft.authorUserId,
       text: draft.text,
       version: draft.version,
       status: draft.status,
       createdAt: draft.createdAt.toISOString(),
     };
   }
+}
+
+function requirePrincipal(request: AuthenticatedRequest) {
+  if (!request.principal || request.principal.kind !== "workspace") {
+    throw new ForbiddenException({
+      code: "PASSWORD_CHANGE_REQUIRED",
+      message: "Change your password first",
+    });
+  }
+  return request.principal;
 }

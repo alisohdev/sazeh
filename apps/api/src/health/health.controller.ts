@@ -4,8 +4,10 @@ import { HealthSchema } from "@sazeh/contracts";
 import { sql } from "drizzle-orm";
 import { DATABASE, type Database } from "../db/database.module.js";
 import { createS3Client, storageSettingsFromEnvironment } from "../storage/s3.js";
+import { OpenRoute } from "../identity/access.guard.js";
 
 @Controller("health")
+@OpenRoute()
 export class HealthController {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 

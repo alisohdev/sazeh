@@ -14,6 +14,7 @@ export const DraftCreateCommandSchema = z
 export const ServerDraftSchema = z
   .object({
     id: z.uuid(),
+    authorUserId: z.uuid(),
     text: z.string().min(1).max(4000),
     version: z.literal(1),
     status: z.literal("DRAFT"),
@@ -48,5 +49,56 @@ export type DraftView = {
   id: string;
   text: string;
   savedAt: string;
-  syncState: "PENDING" | "SENDING" | "SYNCED" | "ERROR";
+  syncState:
+    | "PENDING"
+    | "SENDING"
+    | "SYNCED"
+    | "AUTH_REQUIRED"
+    | "CONFLICT"
+    | "VALIDATION_FAILED"
+    | "RETRY_PENDING";
+  problem?: string;
 };
+
+export const UsernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9._-]{3,80}$/);
+export const PasswordSchema = z.string().min(14).max(256);
+export const LoginSchema = z
+  .object({ username: UsernameSchema, password: z.string().min(1).max(256) })
+  .strict();
+export const ChangePasswordSchema = z
+  .object({ currentPassword: z.string().min(1).max(256), newPassword: PasswordSchema })
+  .strict();
+export const CreateAdminSchema = z
+  .object({ username: UsernameSchema, displayName: z.string().trim().min(1).max(160) })
+  .strict();
+export const ResetPasswordSchema = z.object({}).strict();
+export const AdminStatusSchema = z.object({ active: z.boolean() }).strict();
+export const UserSchema = z
+  .object({
+    id: z.uuid(),
+    username: UsernameSchema,
+    displayName: z.string(),
+    role: z.enum(["SUPERUSER", "ADMIN"]),
+    active: z.boolean(),
+    mustChangePassword: z.boolean(),
+  })
+  .strict();
+export const SessionResponseSchema = z
+  .object({
+    accessToken: z.string().min(1),
+    expiresAt: z.number().int(),
+    user: UserSchema,
+  })
+  .strict();
+export type User = z.infer<typeof UserSchema>;
+export type SessionResponse = z.infer<typeof SessionResponseSchema>;
+export const TemporaryCredentialSchema = z
+  .object({
+    admin: UserSchema,
+    temporaryPassword: z.string().min(14),
+  })
+  .strict();

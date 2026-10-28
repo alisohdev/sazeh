@@ -6,12 +6,32 @@ All identifiers are UUIDs generated before local draft creation where necessary.
 
 Every mutable entity includes id, version, created_at, updated_at and actor metadata. Draft write requires expectedVersion. A stale version returns 409 with current server representation. Directory archiving is soft-state; finalized documents cannot be deleted. All financial and stock operations require a valid project and authorized active account.
 
+## Implemented M1a identity and draft rules
+
+The API accepts only the SUPERUSER and ADMIN roles. It has no registration route, worker login or additional role. The `bootstrap:superuser` command creates the first superuser from the local operator CLI.
+
+The global access guard protects every route by default. Health endpoints, CSRF bootstrap, login, refresh and logout are explicit public exceptions. Password change accepts a restricted temporary-password session. Draft reads and writes require a full authenticated session. The API checks the account, credential version and unrevoked session against PostgreSQL on every protected request.
+
+Access JWTs use HS256, the `sazeh-api` issuer and `sazeh-browser` audience. They expire after 15 minutes and stay in browser memory. The browser stores only the rotating opaque refresh token in an HttpOnly, SameSite=Lax cookie. The session expires after seven days. Unsafe requests require the exact configured `AUTH_ALLOWED_ORIGIN`, JSON content type and a signed CSRF cookie/header pair. Login attempts use shared PostgreSQL limits keyed by normalized username and client address.
+
+Admin creation and password reset return one temporary password. The API stores only an Argon2id hash and sets `mustChangePassword`. Until the admin changes that password, protected application routes return 403. Password change, reset, account disable, session revocation, logout and refresh-token replay invalidate the affected online session immediately.
+
+Logout verifies signed bearer claims after access expiry so an expired bearer with its valid refresh cookie still revokes the session. If a stale tab's bearer belongs to a different session than the refresh cookie, the API revokes only that bearer session and leaves the cookie intact.
+
+The server records `author_user_id` from the authenticated principal. It rejects author fields in the command body. Draft reads return only a row owned by the current user. Authenticated command receipts use (`user_id`, `command_id`) as their key, so one user's retry cannot replay another user's response.
+
+The M1a migration adds nullable `author_user_id` to `note_drafts`. Existing synthetic M0 rows keep a NULL author and are inaccessible through the protected API. Existing global M0 command receipts remain legacy data and are not consulted for authenticated retries. The application never adopts old rows on login. The browser provides an explicit read-only export for the prior anonymous IndexedDB database and labels each exported row as unowned.
+
 ## Data model
 
 | Record | Minimum fields and relationships |
 |---|---|
 | users | username normalized/unique, displayName, passwordHash, role SUPERUSER/ADMIN, active, mustChangePassword, credentialVersion |
-| sessions | userId, refresh token hash/family, expiry, revokedAt, lastUsedAt; never plaintext credentials |
+| sessions | userId, credentialVersion, absolute expiry, revokedAt, revocationReason, lastUsedAt |
+| refresh_tokens | tokenHash, sessionId, generation, issuedAt, consumedAt; retain consumed hashes through session expiry |
+| login_buckets | hashed normalized username or client address, failed-attempt count, resetAt |
+| account_audit | actorUserId, actorSessionId, targetUserId, action, createdAt; no password values |
+| note_drafts | authorUserId nullable only for unowned M0 legacy rows, text, version, status, createdAt |
 | projects | name, ownerContactId, business dates, lifecycle, contract initial value, version |
 | contract_amendments | projectId, signed change amount, reason, businessDate, finalized metadata |
 | budgets | projectId, category, amount; changes audited, baseline retained |
@@ -30,7 +50,8 @@ Every mutable entity includes id, version, created_at, updated_at and actor meta
 | claims | documentId, amount, status SUBMITTED/APPROVED/REJECTED, approval note; only approved/finalized amounts count |
 | attachments | id, draft/document target, creator, object key, filename, mediaType, size, state STAGED/READY/FAILED |
 | audit_events | actor/session, entity, action, before/after draft change or finalized effect IDs, reason, timestamp |
-| command_receipts | userId + commandId unique, canonical request hash, result entity/version, final status |
+| command_receipts | legacy M0 global command receipts; not used by authenticated M1a commands |
+| authenticated_command_receipts | userId + commandId unique, canonical request hash, result snapshot, createdAt |
 | sync_changes | server revision, affected entity snapshots/tombstones, committed actor/time; no password/session secrets |
 
 Use typed domain tables/check constraints for financial kinds, not arbitrary unvalidated JSON money records. Schema names are logical; implementation may split headers/lines while preserving invariants. Project transfers have two endpoints but post one atomic stock document; account balances remain project-specific.
@@ -62,20 +83,25 @@ Reports:
 - Budget variance: category budget minus incurred category cost.
 - Management earned margin: approved claims minus incurred cost. Label basis explicitly; never label contract value minus payments as actual profit.
 
-## Endpoint families
+## Planned endpoint families
 
 Prefix /api/v1. Auth responses and sensitive API data use Cache-Control: no-store. Browser-managed offline snapshots are separate from HTTP caching.
 
 | Method/path | Contract |
 |---|---|
-| POST /auth/login | username/password; access token in response, refresh cookie; generic failure, rate-limited |
-| POST /auth/refresh | rotate refresh cookie, new access token; origin/CSRF protections |
-| POST /auth/logout | revoke current session and clear cookie; idempotent |
-| GET /auth/me | current user, capabilities, mustChangePassword |
-| POST /auth/change-password | currentPassword/newPassword; revoke sessions; re-login after success |
-| GET, POST /admins | superuser only; list/create, never return password hashes |
-| POST /admins/:id/reset-password | superuser; temporary password reset and revoke all target sessions |
-| PATCH /admins/:id/status | superuser; disable/reactivate; cannot disable last active superuser |
+| GET /auth/csrf | implemented; return a signed CSRF token and set its double-submit cookie |
+| POST /auth/login | implemented; username/password, memory-only access token and refresh cookie; rate-limited |
+| POST /auth/refresh | implemented; rotate refresh cookie and return a new access token |
+| POST /auth/logout | implemented; revoke the refresh-token session and clear the cookie |
+| GET /auth/me | implemented; return the current user |
+| POST /auth/password | implemented; check currentPassword, change newPassword and revoke sessions |
+| POST /auth/sessions/revoke | implemented; revoke the current user's sessions |
+| GET /admins | implemented; superuser only; list admins without password hashes |
+| POST /admins | implemented; superuser only; create an ADMIN and return a one-time temporary password |
+| POST /admins/:id/reset-password | implemented; superuser only; reset an admin password and revoke its sessions |
+| POST /admins/:id/status | implemented; superuser only; disable or reactivate an ADMIN |
+| POST /drafts | implemented; require a full session, create the draft with the server-selected author and claim a user-scoped receipt atomically |
+| GET /drafts/:id | implemented; require a full session and return only a draft owned by that user |
 | GET, POST /projects | paginated list/create; explicit lifecycle fields |
 | GET, PATCH /projects/:id | project detail/update with expectedVersion |
 | POST /projects/:id/lifecycle | complete/archive/reopen with server checks and reason |

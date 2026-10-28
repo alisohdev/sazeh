@@ -2,12 +2,20 @@ import { createHash } from "node:crypto";
 import { ConflictException } from "@nestjs/common";
 import { DraftAcknowledgementSchema, DraftCreateCommandSchema } from "@sazeh/contracts";
 import type { DraftAcknowledgement, DraftCreateCommand } from "@sazeh/contracts";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Database } from "../db/database.module.js";
-import { commandReceipts, noteDrafts } from "../db/schema.js";
+import { authenticatedReceipts, noteDrafts } from "../db/schema.js";
+import { claimsFor, requireLiveSession, type Principal } from "../identity/identity.service.js";
 
-export async function createDraft(db: Database, input: unknown): Promise<DraftAcknowledgement> {
+export async function createDraft(
+  db: Database,
+  principal: Principal,
+  input: unknown,
+): Promise<DraftAcknowledgement> {
   const command = DraftCreateCommandSchema.parse(input);
+  if (principal.kind !== "workspace") {
+    throw new Error("A full workspace principal is required to create a draft");
+  }
   const requestHash = hashCommand(command);
   const createdAt = new Date().toISOString();
   const response = DraftAcknowledgementSchema.parse({
@@ -15,6 +23,7 @@ export async function createDraft(db: Database, input: unknown): Promise<DraftAc
     commandId: command.commandId,
     draft: {
       id: command.entityId,
+      authorUserId: principal.userId,
       text: command.text,
       version: 1,
       status: "DRAFT",
@@ -24,21 +33,30 @@ export async function createDraft(db: Database, input: unknown): Promise<DraftAc
   });
 
   return db.transaction(async (tx) => {
+    await requireLiveSession(tx, claimsFor(principal), false, "share");
     const [claimedReceipt] = await tx
-      .insert(commandReceipts)
+      .insert(authenticatedReceipts)
       .values({
+        userId: principal.userId,
         commandId: command.commandId,
         canonicalRequestHash: requestHash,
         resultSnapshot: response,
       })
-      .onConflictDoNothing({ target: commandReceipts.commandId })
-      .returning({ commandId: commandReceipts.commandId });
+      .onConflictDoNothing({
+        target: [authenticatedReceipts.userId, authenticatedReceipts.commandId],
+      })
+      .returning({ commandId: authenticatedReceipts.commandId });
 
     if (!claimedReceipt) {
       const [receipt] = await tx
         .select()
-        .from(commandReceipts)
-        .where(eq(commandReceipts.commandId, command.commandId))
+        .from(authenticatedReceipts)
+        .where(
+          and(
+            eq(authenticatedReceipts.userId, principal.userId),
+            eq(authenticatedReceipts.commandId, command.commandId),
+          ),
+        )
         .limit(1);
       if (!receipt) throw new Error("Command receipt disappeared after a uniqueness conflict");
       if (receipt.canonicalRequestHash !== requestHash) {
@@ -55,6 +73,7 @@ export async function createDraft(db: Database, input: unknown): Promise<DraftAc
       .insert(noteDrafts)
       .values({
         id: command.entityId,
+        authorUserId: principal.userId,
         text: command.text,
         version: 1,
         status: "DRAFT",

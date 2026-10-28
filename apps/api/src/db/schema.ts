@@ -3,10 +3,12 @@ import {
   boolean,
   char,
   check,
+  index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -37,6 +39,7 @@ export const noteDrafts = pgTable(
   "note_drafts",
   {
     id: uuid("id").primaryKey(),
+    authorUserId: uuid("author_user_id").references(() => users.id),
     text: varchar("text", { length: 4000 }).notNull(),
     version: integer("version").notNull().default(1),
     status: varchar("status", { length: 16 }).notNull().default("DRAFT"),
@@ -53,5 +56,73 @@ export const commandReceipts = pgTable("command_receipts", {
   commandId: uuid("command_id").primaryKey(),
   canonicalRequestHash: char("canonical_request_hash", { length: 64 }).notNull(),
   resultSnapshot: jsonb("result_snapshot").$type<unknown>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    credentialVersion: integer("credential_version").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revocationReason: text("revocation_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("sessions_user_idx").on(table.userId)],
+);
+
+export const refreshTokens = pgTable(
+  "refresh_tokens",
+  {
+    tokenHash: char("token_hash", { length: 64 }).primaryKey(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    generation: integer("generation").notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("refresh_tokens_session_generation_uq").on(table.sessionId, table.generation),
+  ],
+);
+
+export const loginBuckets = pgTable("login_buckets", {
+  key: char("key", { length: 64 }).primaryKey(),
+  attempts: integer("attempts").notNull(),
+  resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
+});
+
+export const authenticatedReceipts = pgTable(
+  "authenticated_command_receipts",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    commandId: uuid("command_id").notNull(),
+    canonicalRequestHash: char("canonical_request_hash", { length: 64 }).notNull(),
+    resultSnapshot: jsonb("result_snapshot").$type<unknown>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.commandId] })],
+);
+
+export const accountAudit = pgTable("account_audit", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  actorUserId: uuid("actor_user_id")
+    .notNull()
+    .references(() => users.id),
+  actorSessionId: uuid("actor_session_id")
+    .notNull()
+    .references(() => sessions.id),
+  targetUserId: uuid("target_user_id")
+    .notNull()
+    .references(() => users.id),
+  action: varchar("action", { length: 40 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

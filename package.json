@@ -22,7 +22,7 @@
     "verify:api": "pnpm --filter @sazeh/api verify:api",
     "serve:local": "pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build && pnpm --filter @sazeh/api --filter @sazeh/web --parallel serve",
     "icons:generate": "node scripts/generate-pwa-icons.mjs",
-    "verify:browser": "playwright test && pnpm --filter @sazeh/api cleanup:verification-drafts",
+    "verify:browser": "pnpm --filter @sazeh/api verify:browser",
     "verify:m0": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm verify:database && pnpm verify:bootstrap && pnpm build && pnpm storage:verify && pnpm verify:api && pnpm verify:browser"
   },
   "devDependencies": {

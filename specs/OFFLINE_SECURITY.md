@@ -1,22 +1,38 @@
 # Offline synchronization and security specification
 
+## M1a implementation
+
+Each browser workspace uses a separate IndexedDB database keyed by environment, exact origin and user ID. An origin control database stores the current account phase, epoch and recoverable departure journal. Browser Web Locks serialize login, refresh, password change and the full logout transition through durable completion. Neither database stores access tokens, refresh tokens or passwords. Browsers without Web Locks fail lifecycle and save coordination visibly instead of falling back to an expiring owner ID.
+
+Tabs notify one another of local draft-state changes through a BroadcastChannel named from the same environment/origin/user workspace key. Messages contain no draft text or credentials; each tab reloads the changed rows from its own IndexedDB connection.
+
+The foreground sync runner uses a same-tab single-flight promise and a per-user IndexedDB lease with a random owner ID, generation and 30-second expiry. It renews the lease every 10 seconds. A surviving tab schedules recovery at the active lease expiry, including when the owner closes while its request is in flight. Before sending a command or saving an acknowledgment, the runner checks the account epoch and lease owner. It stops when either changes. Draft saves hold a shared workspace activity lock; logout changes the identity phase and takes the exclusive lock before counting, so a save already admitted is either committed and counted or rejected.
+
+M1a saves each note and immutable outbox command in one IndexedDB transaction. A repeated entity ID fails the local insert instead of creating a duplicate. The API atomically stores the authenticated receipt and server draft. The receipt key is the authenticated user ID and command ID.
+
+The runner stores expired or missing authentication as AUTH_REQUIRED, explicit revocation or account disable as an authentication lock, 409 as CONFLICT, 400 and 422 as VALIDATION_FAILED, and network, 429 and 5xx failures as RETRY_PENDING. Authentication rejection records a pause in the shared identity control record, stopping automatic upload for every pending command and tab until successful authentication clears it. Local saves remain available. The browser checks the authenticated user ID before sending after refresh. Conflict and validation rows are excluded from later retry runs. A timer wakes transient failures at their persisted retry time and pending work when another tab's lease expires. Scheduling and timer callbacks check that the workspace is current and authentication permits sync; identity changes cancel outstanding wake-ups.
+
+Logout holds an origin-wide Web Lock from the departure transition through the pending-work decision, local action, server revocation and durable completion. If the page reloads while the decision is open, the Web Lock is released and a new page resumes the same departure journal and presents the decision again. The user can cancel, keep or export pending work, or explicitly discard and log out. The selected keep or discard action is persisted before local deletion; recovery repeats a discard idempotently if needed. An interrupted offline logout remains pending and blocks a new account until the server logout completes. Account switching opens a separate user database and never reads or uploads the prior user's commands.
+
+The migration leaves existing server drafts with a NULL author. Protected reads do not return them. The application never assigns these rows during login. The browser does not open the prior anonymous M0 IndexedDB database for normal use. It offers an explicit read-only export that marks each row unowned.
+
 ## Local persistence
 
 IndexedDB stores workspace metadata, authorized snapshots, local drafts, outbox commands, attachment blobs and conflict records. Keys include environment, origin and user ID. The current company is implicit because deployments are single-company. Never store passwords or refresh/access credentials in this database.
 
 Every save uses one IndexedDB transaction for draft + outbox. Show “saved on device” only after commit succeeds. On quota/write error, keep form content in memory and explicitly say it was not saved. Provide a draft export action; request persistent storage, but do not assume it is granted or prevents user deletion.
 
-First use needs online login/bootstrap. Reopening an offline-installed app may show the last user's cached workspace on that trusted device; this is a product convenience, not fresh authentication. Display offline/last-sync status. A new user cannot view the previous user's cache. Prevent account switching until pending work is exported or explicitly discarded and cached data is cleared. Explicit logout warns about pending work and offers cancel, export then logout, or discard then logout. Never silently delete pending drafts.
+First use needs online login/bootstrap. Reopening an offline-installed app may show the last user's cached workspace on that trusted device; this is not fresh authentication. Display offline/last-sync status. Each user has a separate database. Prevent account switching until pending work is exported or explicitly discarded. Explicit logout warns about pending work and offers cancel, export then logout, or discard then logout. Never silently delete pending drafts.
 
 If the server disables the account, stop sync and lock the cached workspace when that is detected. Do not upload old drafts under a different admin's identity. Remote revocation cannot erase an already disconnected browser. Lost-device handling includes server session revocation and communicating that local device data remains outside server control.
 
 ## Outbox state machine
 
-LOCAL_PENDING -> SENDING -> ACKNOWLEDGED. On 401, AUTH_REQUIRED; on 409, CONFLICT; on 422, VALIDATION_FAILED; on transient network/5xx, RETRY_PENDING. Independent commands continue; dependent commands wait. Only the matching server acknowledgment advances an entry to acknowledged. After crash/restart, uncertain SENDING becomes retryable with the exact same command ID and body.
+PENDING -> SENDING -> SYNCED. Expired or missing authentication uses AUTH_REQUIRED; explicit session revocation or account disable locks the workspace. On 409, use CONFLICT. On 400 or 422, use VALIDATION_FAILED. Use RETRY_PENDING for network, 429 and 5xx failures. Other 403 responses are not authentication failures. Independent commands continue; dependent commands wait. Only the matching server acknowledgment advances an entry to SYNCED. After a crash or restart, an uncertain SENDING entry becomes retryable with the same command ID and body.
 
 Use immutable outbox command payloads after first send. Editing pending content creates a superseding command with explicit dependency; do not reuse the original command ID with different content. For unsent commands, replacing locally is allowed only before any send attempt and still uses a fresh command ID for clarity. Client-created UUIDs allow offline parent-child references; sync parent creation first.
 
-Only one foreground runner operates per origin/user, coordinated across tabs through an IndexedDB lease with timeout. Duplicate runners must still be harmless due to server idempotency. Trigger on app open/focus, connectivity restoration, manual retry and bounded periodic retry while active. A navigator online flag is a hint, not proof that the API is reachable. Exponential backoff with jitter for transient failures; respect Retry-After.
+Only one foreground runner operates per origin/user, coordinated across tabs through a renewable IndexedDB lease. The runner checks the lease owner and generation before dispatch, retry-state writes and acknowledgment. Duplicate delivery remains safe through server idempotency. Trigger sync on app open, connectivity restoration, due retry time and manual retry. A navigator online flag is a hint, not proof that the API is reachable. Use exponential backoff with jitter for transient failures and respect Retry-After.
 
 ## Server protocol and change feed
 

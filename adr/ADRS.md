@@ -87,3 +87,17 @@ Persist metadata and draft IDs before upload; retain local blob until server con
 **Decision:** Unit tests for money/valuation, PostgreSQL integration tests for posting/concurrency, and browser tests for mobile/offline/auth flows. Local and Vercel preview gates precede an Iran-hosting rehearsal and client acceptance. Run reviewed migrations explicitly; never migrate from request handlers or every function cold start.
 
 **Consequences:** No fixed delivery promise before M0 and vertical-slice validation. Deployment rollback uses backward-compatible schemas or a tested recovery plan. Restore tests must cover both DB and referenced attachment objects. Real data must not enter the preview dataset.
+
+## ADR 009 M1b shared directory boundary and verification
+
+**Status:** Accepted planning decision, 28 October 2026; implementation pending explicit operator go. See DECISIONS.md D14-D21.
+
+**Context:** M1a private note ownership is unsuitable for shared company projects. The initial M1b plan also prescribed an execution plugin and fixed review lanes beyond the milestone's needs.
+
+**Decision:** Share project/contact/engagement/budget records across full-session admins and the superuser, while preserving account-scoped local drafts and immutable commands. Extend the existing IndexedDB database through a forward migration. Direct REST and queued commands share domain transactions, optimistic versions and server-derived audit actors. Bootstrap and feed must provide a consistent committed view; delayed acknowledgments cannot overwrite or mark newer local edits synced.
+
+M1b lifecycle is active -> archived -> active with required reasons, preserving history and blocking new assignments to archived records. Archive is not financial completion. Assignments/default rates belong to M1b; earnings/calculations to M2; materials to M3. Domain details are in specs/DOMAIN_API.md. Information/counts/filter/drill-down precede financial analytics from M2-M4 source modules.
+
+**Alternatives:** Private per-author business records contradict company-wide permissions. A new local database would strand pending M1a work. Financial completion without stock/balance sources would imply checks the milestone cannot perform. Fixed agent/lane counts measure process rather than correctness.
+
+**Consequences:** Verify authorization, dates/archive restrictions, versions, immutable retries, bootstrap/feed consistency, parent ordering, account isolation, stale acknowledgments and M1a regressions with PostgreSQL and built-browser checks. Review mobile screenshots at 360 px; video is optional. Use available tools with no required plugin commands or lane counts. Retain warmed ordinary API p95 below one second on the defined fixture; measure sync latency without an extra sync threshold or relative-regression gate. This decision does not claim implementation, deployment or production readiness.

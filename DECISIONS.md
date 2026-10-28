@@ -18,6 +18,21 @@
 | D12 | Offline drafts and attachments queue locally; reconnect validates and syncs. Conflicts reviewed, no duplicate posting, no negative inventory. |
 | D13 | Local development first, Vercel preview, later Iran-based hosting such as Liara. |
 
+## M1b product-owner decisions - 28 October 2026
+
+These decisions supersede earlier milestone sequencing and M1b execution-process proposals. They authorize this planning revision; implementation still requires an explicit go.
+
+| ID | Decision |
+|---|---|
+| D14 | Materials move to M3. M1b includes worker-project assignments/default rates; calculations and earnings remain M2. |
+| D15 | M1b lifecycle is active -> archived -> active. Require archive/reopen reasons; retain IDs/history. Archive hides default active lists and does not certify financial completion. |
+| D16 | Block new assignments to archived projects/contacts; retain existing assignments and history. |
+| D17 | Engagement types: DAILY, HOURLY, QUANTITY, MONTHLY, FIXED_CONTRACT, MANUAL. Workers may span projects. Same worker/project periods cannot overlap; ends inclusive, empty end ongoing. |
+| D18 | M1b budget categories are editable labels without a category-management subsystem. |
+| D19 | M1b analytics: information, defined counts, filters and drill-down. Labor analytics M2; procurement/stock M3; combined finances M4. Financial charts require source records; demos are realistic and synthetic. |
+| D20 | Warmed ordinary API p95 below one second on a defined dataset. Measure sync latency without a one-second sync gate or 20% relative-regression gate. |
+| D21 | Verify observable correctness with available tools; no fixed agent/lane counts or unavailable plugin commands. Retain snapshot consistency, immutable retries, conflicts, account isolation and stale-ack protection. UI review uses screenshots; video optional when needed. |
+
 ## Engineering defaults for this draft
 
 These are recommendations chosen to make the pack implementable. They are not newly discovered client requirements. Record any changes through an ADR before implementation.

@@ -62,11 +62,17 @@ export function openDraftWorkspace(
   let syncFlight: Promise<void> | undefined;
   let activeRun: AbortController | undefined;
   let syncWakeTimer: number | undefined;
+  let wakeGeneration = 0;
   let closed = false;
 
   const unsubscribeControl = workspaceControl.subscribe(() => {
-    void isCurrent().then((current) => {
-      if (!current) activeRun?.abort(new Error("Browser identity changed"));
+    void canSync().then((allowed) => {
+      if (!allowed) {
+        cancelSyncWakeup();
+        activeRun?.abort(new Error("Workspace synchronization paused"));
+      } else {
+        void scheduleSyncWakeup();
+      }
     });
   });
 
@@ -77,6 +83,10 @@ export function openDraftWorkspace(
 
   async function isCurrent(): Promise<boolean> {
     return !closed && workspaceControl.isCurrent(user.id, epoch);
+  }
+
+  async function canSync(): Promise<boolean> {
+    return !closed && workspaceControl.canSync(user.id, epoch);
   }
 
   async function requireCurrent(): Promise<void> {
@@ -217,7 +227,7 @@ export function openDraftWorkspace(
 
     async close(): Promise<void> {
       closed = true;
-      if (syncWakeTimer !== undefined) window.clearTimeout(syncWakeTimer);
+      cancelSyncWakeup();
       activeRun?.abort(new Error("Draft workspace closed"));
       unsubscribeControl();
       const store = await databaseReady;
@@ -228,7 +238,7 @@ export function openDraftWorkspace(
 
   async function runSync(): Promise<void> {
     const store = await db();
-    if (!(await isCurrent()) || !navigator.onLine) return;
+    if (!(await canSync()) || !navigator.onLine) return;
     const owner = crypto.randomUUID();
     const lease = await store.transaction("rw", store.leases, async () => {
       const current = await store.leases.get("sync");
@@ -288,7 +298,7 @@ export function openDraftWorkspace(
         if (
           controller.signal.aborted ||
           !(await ownsLease(store, owner, lease.generation)) ||
-          !(await isCurrent())
+          !(await canSync())
         )
           return;
         sending.add(entry.entityId);
@@ -308,7 +318,7 @@ export function openDraftWorkspace(
             controller.signal.aborted ||
             leaseLost ||
             !(await ownsLease(store, owner, lease.generation)) ||
-            !(await isCurrent())
+            !(await canSync())
           )
             return;
           if (response.status === 401 || response.status === 403) {
@@ -316,6 +326,7 @@ export function openDraftWorkspace(
               { code?: string } | undefined;
             const code = problem?.code ?? (response.status === 401 ? "AUTH_REQUIRED" : "");
             if (isAuthenticationCode(code)) {
+              await workspaceControl.pauseSync(user.id, epoch);
               const updated = await updateState(
                 store,
                 entry,
@@ -392,7 +403,7 @@ export function openDraftWorkspace(
             controller.signal.aborted ||
             leaseLost ||
             !(await ownsLease(store, owner, lease.generation)) ||
-            !(await isCurrent())
+            !(await canSync())
           )
             return;
           await store.transaction("rw", store.drafts, store.outbox, store.leases, async () => {
@@ -417,11 +428,12 @@ export function openDraftWorkspace(
             controller.signal.aborted ||
             leaseLost ||
             !(await ownsLease(store, owner, lease.generation)) ||
-            !(await isCurrent())
+            !(await canSync())
           )
             return;
           if (error instanceof ApiError && error.status === 401) {
             const code = error.code;
+            await workspaceControl.pauseSync(user.id, epoch);
             const updated = await updateState(
               store,
               entry,
@@ -488,11 +500,17 @@ export function openDraftWorkspace(
     );
   }
 
-  async function scheduleSyncWakeup(): Promise<void> {
-    if (closed) return;
+  function cancelSyncWakeup(): void {
+    wakeGeneration += 1;
     if (syncWakeTimer !== undefined) window.clearTimeout(syncWakeTimer);
     syncWakeTimer = undefined;
+  }
+
+  async function scheduleSyncWakeup(): Promise<void> {
+    cancelSyncWakeup();
+    const generation = wakeGeneration;
     try {
+      if (!(await canSync())) return;
       const store = await db();
       const entries = await store.outbox.toArray();
       const now = Date.now();
@@ -507,10 +525,15 @@ export function openDraftWorkspace(
         earliest = Math.min(earliest, Math.max(retryReadyAt, leaseReadyAt));
       }
       if (!Number.isFinite(earliest)) return;
+      const allowed = await canSync();
+      if (!allowed || generation !== wakeGeneration) return;
       syncWakeTimer = window.setTimeout(
         () => {
           syncWakeTimer = undefined;
-          if (navigator.onLine) void repository.syncPending();
+          void canSync().then((current) => {
+            if (current && generation === wakeGeneration && navigator.onLine)
+              void repository.syncPending();
+          });
         },
         Math.max(0, earliest - now),
       );

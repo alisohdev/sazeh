@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 const apiRequire = createRequire(resolve(process.cwd(), "apps/api/package.json"));
 const { DraftCreateCommandSchema } = apiRequire("@sazeh/contracts");
@@ -123,6 +123,84 @@ test("authenticated offline drafts survive session expiry, sync once across tabs
   await expect(page.getByRole("button", { name: "مدیریت حساب‌های مدیران" })).toHaveCount(0);
   expect(posts.get(pendingMarker) ?? 0).toBe(0);
 });
+
+test("authentication rejection pauses both queued drafts until the user signs in again", async ({
+  page,
+  context,
+}) => {
+  const username = requiredEnv("M1A_TEST_USERNAME");
+  const password = requiredEnv("M1A_TEST_PASSWORD");
+  const markers = [1, 2].map(
+    (number) => `M1A_BROWSER_AUTH_PAUSE_${number}::${requiredEnv("M1A_TEST_RUN_ID")}`,
+  );
+  const posts = new Map<string, number>();
+  context.on("request", (request) => {
+    if (!request.url().endsWith("/api/v1/drafts") || request.method() !== "POST") return;
+    const parsed = DraftCreateCommandSchema.safeParse(request.postDataJSON());
+    if (parsed.success) posts.set(parsed.data.text, (posts.get(parsed.data.text) ?? 0) + 1);
+  });
+
+  await page.goto("/");
+  await page.getByLabel("نام کاربری").fill(username);
+  await page.getByLabel("گذرواژه", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByLabel("متن یادداشت")).toBeVisible();
+  const peer = await context.newPage();
+  await peer.goto("/");
+  await expect(peer.getByLabel("متن یادداشت")).toBeVisible();
+  await context.setOffline(true);
+  for (const marker of markers) {
+    await page.getByLabel("متن یادداشت").fill(marker);
+    await page.getByRole("button", { name: "ذخیرهٔ یادداشت" }).click();
+    await expect(page.getByText(marker)).toBeVisible();
+    await expect(peer.getByText(marker)).toBeVisible();
+  }
+  await expireFixtureSessions(requiredEnv("M1A_TEST_USER_ID"));
+  await context.setOffline(false);
+  await expect(
+    page.getByText("اتصال برقرار شد؛ برای ادامهٔ همگام‌سازی دوباره وارد شوید."),
+  ).toBeVisible();
+  await expect(
+    peer.getByText("اتصال برقرار شد؛ برای ادامهٔ همگام‌سازی دوباره وارد شوید."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "تلاش دوباره برای همگام‌سازی" }).click();
+  await expect(page.getByText("ورود دوباره لازم است")).toBeVisible();
+  await expectNoSyncRequests(context);
+  for (const marker of markers) expect(posts.get(marker) ?? 0).toBe(0);
+
+  await page.getByRole("button", { name: "خروج / تغییر حساب" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expectNoSyncRequests(context);
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "دریافت خروجی" }).click();
+  await download;
+  await page.getByRole("button", { name: "خروج پس از دریافت خروجی" }).click();
+  await expect(page.getByLabel("نام کاربری")).toBeVisible();
+  await page.getByLabel("نام کاربری").fill(username);
+  await page.getByLabel("گذرواژه", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByText("همگام شد", { exact: true })).toHaveCount(2);
+  for (const marker of markers) {
+    await expect(page.getByText(marker)).toBeVisible();
+    expect(posts.get(marker)).toBe(1);
+  }
+});
+
+async function expectNoSyncRequests(context: BrowserContext): Promise<void> {
+  const requested = await context
+    .waitForEvent("request", {
+      predicate: (request) =>
+        request.method() === "POST" &&
+        (request.url().endsWith("/api/v1/auth/refresh") ||
+          request.url().endsWith("/api/v1/drafts")),
+      timeout: 1_000,
+    })
+    .then(
+      () => true,
+      () => false,
+    );
+  expect(requested, "authentication rejection must stop automatic sync requests").toBe(false);
+}
 
 async function saveOfflineDraft(page: Page, text: string): Promise<void> {
   await page.getByLabel("متن یادداشت").fill(text);

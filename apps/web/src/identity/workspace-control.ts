@@ -8,6 +8,7 @@ export type IdentityControl = {
   epoch: number;
   phase: ControlPhase;
   explicitLoginRequired?: boolean;
+  syncAuthentication?: "required";
   user?: User;
   lastUser?: User;
   departure?: { id: string; choice?: DepartureChoice; localApplied: boolean };
@@ -101,7 +102,7 @@ export const workspaceControl = {
       if (previous.phase === "active" && previous.user?.id !== user.id) {
         throw new Error("The current browser workspace must be left before changing accounts.");
       }
-      const next =
+      const next: IdentityControl =
         previous.phase === "active" && previous.user?.id === user.id
           ? { ...previous, user, lastUser: user }
           : {
@@ -111,6 +112,7 @@ export const workspaceControl = {
               user,
               lastUser: user,
             };
+      delete next.syncAuthentication;
       await control.identity.put(next);
       return next;
     });
@@ -284,6 +286,26 @@ export const workspaceControl = {
   async isCurrent(userId: string, epoch: number): Promise<boolean> {
     const current = await this.state();
     return current.phase === "active" && current.epoch === epoch && current.user?.id === userId;
+  },
+
+  async canSync(userId: string, epoch: number): Promise<boolean> {
+    const current = await this.state();
+    return (
+      current.phase === "active" &&
+      current.epoch === epoch &&
+      current.user?.id === userId &&
+      current.syncAuthentication !== "required"
+    );
+  },
+
+  async pauseSync(userId: string, epoch: number): Promise<void> {
+    await control.transaction("rw", control.identity, async () => {
+      const current = await control.identity.get("identity");
+      if (current?.phase !== "active" || current.epoch !== epoch || current.user?.id !== userId)
+        return;
+      await control.identity.put({ ...current, syncAuthentication: "required" });
+    });
+    announce();
   },
 
   subscribe(listener: () => void): () => void {

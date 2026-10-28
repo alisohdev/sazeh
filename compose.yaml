@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17.11-alpine3.23
+    environment:
+      POSTGRES_DB: sazeh
+      POSTGRES_USER: sazeh
+      POSTGRES_PASSWORD: sazeh_local_only
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sazeh -d sazeh"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  attachments:
+    image: chrislusf/seaweedfs:4.51
+    environment:
+      AWS_ACCESS_KEY_ID: sazeh_storage
+      AWS_SECRET_ACCESS_KEY: local_only_storage_secret
+      S3_BUCKET: attachments
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - attachment-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9333/cluster/status"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres-data:
+  attachment-data:

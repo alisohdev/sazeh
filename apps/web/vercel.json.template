@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/web build",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://REPLACE_WITH_EXACT_API_DEPLOYMENT_URL/api/:path*"
+    }
+  ]
+}

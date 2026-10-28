@@ -1,0 +1,26 @@
+{
+  "name": "@sazeh/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "node ../../scripts/generate-pwa-icons.mjs && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "serve": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@sazeh/contracts": "workspace:*",
+    "dexie": "4.4.7",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.5",
+    "vite-plugin-pwa": "2.0.0",
+    "workbox-build": "7.4.1",
+    "workbox-window": "7.4.1"
+  }
+}

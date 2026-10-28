@@ -1,0 +1,42 @@
+{
+  "name": "sazeh-m0",
+  "private": true,
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api --filter @sazeh/web --parallel dev",
+    "build": "pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build",
+    "lint": "eslint .",
+    "typecheck": "pnpm --filter @sazeh/contracts typecheck && pnpm --filter @sazeh/api typecheck && pnpm --filter @sazeh/web typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:migrate": "pnpm --filter @sazeh/api db:migrate",
+    "db:seed": "pnpm --filter @sazeh/api db:seed",
+    "verify:database": "pnpm db:migrate && pnpm db:migrate && pnpm db:seed && pnpm db:seed",
+    "storage:init": "pnpm --filter @sazeh/api storage:init",
+    "storage:verify": "pnpm --filter @sazeh/api storage:verify",
+    "bootstrap:superuser": "pnpm --filter @sazeh/api bootstrap:superuser",
+    "verify:bootstrap": "pnpm --filter @sazeh/api verify:bootstrap",
+    "verify:api": "pnpm --filter @sazeh/api verify:api",
+    "serve:local": "pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build && pnpm --filter @sazeh/api --filter @sazeh/web --parallel serve",
+    "icons:generate": "node scripts/generate-pwa-icons.mjs",
+    "verify:browser": "playwright test && pnpm --filter @sazeh/api cleanup:verification-drafts",
+    "verify:m0": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm verify:database && pnpm verify:bootstrap && pnpm build && pnpm storage:verify && pnpm verify:api && pnpm verify:browser"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "@sazeh/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env --import tsx --watch src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.vercel.json",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node --env-file=../../.env --import tsx scripts/migrate.ts",
+    "db:seed": "node --env-file=../../.env --import tsx scripts/seed.ts",
+    "storage:init": "node --env-file=../../.env --import tsx scripts/storage-init.ts",
+    "storage:verify": "node --env-file=../../.env --import tsx scripts/storage-verify.ts",
+    "bootstrap:superuser": "node --env-file=../../.env --import tsx scripts/bootstrap-superuser.ts",
+    "verify:bootstrap": "node --env-file=../../.env --import tsx scripts/verify-bootstrap.ts",
+    "verify:api": "node --env-file=../../.env --import tsx scripts/verify-api.ts",
+    "cleanup:verification-drafts": "node --env-file=../../.env --import tsx scripts/cleanup-verification-drafts.ts",
+    "serve": "node --env-file=../../.env dist/main.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1158.0",
+    "@sazeh/contracts": "workspace:*",
+    "@nestjs/common": "12.3.2",
+    "@nestjs/core": "12.3.2",
+    "@nestjs/platform-express": "12.3.2",
+    "argon2": "0.45.1",
+    "drizzle-orm": "0.45.4",
+    "postgres": "3.4.9",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@inquirer/prompts": "8.7.5",
+    "@types/express": "5.0.3",
+    "drizzle-kit": "0.31.11"
+  }
+}

@@ -6,6 +6,7 @@ import { setTimeout } from "node:timers/promises";
 const apiPort = Number(process.env.API_PORT ?? 3000);
 const frontendUrl = "http://127.0.0.1:4173";
 const apiReadyUrl = `http://127.0.0.1:${apiPort}/api/health/ready`;
+const apiProxyReadyUrl = `${frontendUrl}/api/v1/auth/csrf`;
 const command = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "pnpm";
 const args =
   process.platform === "win32" ? ["/d", "/s", "/c", "pnpm serve:local"] : ["serve:local"];
@@ -28,7 +29,12 @@ const deadline = Date.now() + 60_000;
 while (Date.now() < deadline) {
   if (exitCode !== undefined)
     throw new Error(`Local services exited before readiness (${exitCode}).`);
-  if ((await isReady(apiReadyUrl)) && (await isReady(frontendUrl))) break;
+  if (
+    (await isReady(apiReadyUrl)) &&
+    (await isReady(frontendUrl)) &&
+    (await isReady(apiProxyReadyUrl))
+  )
+    break;
   await setTimeout(250);
 }
 if (Date.now() >= deadline)

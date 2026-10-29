@@ -2,11 +2,11 @@
 
 ## Status and scope
 
-Planning review revised on 28 October 2026 using the operator decisions in DECISIONS.md. This revision is documentation-only. Implementation requires an explicit go. No implementation, execution cadence or deployment starts during this planning task.
+Implemented on `codex/m1b-implementation`, based on merged M1a/M1b planning PR #3 (`8319ed7`). This document records implementation evidence and handoff status. The product decisions from DECISIONS.md remain the source of truth.
 
-One future implementation PR targets updated main after M1a. Business records are shared by full-session ADMIN and SUPERUSER accounts; local drafts and commands remain account-scoped. Preserve private M1a notes and the M0 unowned export boundary. Keep unrelated changes, including local pnpm-workspace.yaml build permissions, outside planning commits.
+Business records are shared by full-session ADMIN and SUPERUSER accounts; local drafts and commands remain account-scoped. M1b delivers projects, contacts, worker-project assignments and default rates, editable budget labels, authenticated offline synchronization, and the Persian RTL project overview. It does not deliver earnings, materials, financial charts, deployment, or financial completion certification through archiving. The unrelated local `pnpm-workspace.yaml` build-permission edit remains separate from the implementation and must stay out of the PR.
 
-Read README.md, PRD.md, DECISIONS.md, DELIVERY.md, adr/ADRS.md, specs/DOMAIN_API.md, specs/ACCEPTANCE.md, specs/OFFLINE_SECURITY.md and M1A_ARCHITECTURE.md before implementation. The rules below are planned behavior, not implemented capabilities.
+Implementation followed README.md, PRD.md, DECISIONS.md, DELIVERY.md, adr/ADRS.md, specs/DOMAIN_API.md, specs/ACCEPTANCE.md, specs/OFFLINE_SECURITY.md and M1A_ARCHITECTURE.md. The requirements below describe delivered behavior and its evidence.
 
 ## Resolved domain boundaries
 
@@ -23,40 +23,40 @@ Check a box only when its named evidence exists. Use repository scripts, Postgre
 
 ### 1. Schema, contracts, domain rules, versioning and audit provenance
 
-- [ ] Extend apps/api/src/db/schema.ts through additive migrations for projects, contacts, engagements, budgets, audit and directory sync persistence. Preserve existing accounts, notes, receipts and client queues.
-- [ ] Define runtime-validated request/response contracts in packages/contracts/src/index.ts and matching OpenAPI field schemas before browser integration. Cover project/contact/engagement CRUD, lifecycle, budgets and sync endpoints.
-- [ ] Share domain transactions between REST and queued commands. Enforce expectedVersion; stale updates return 409 with current server representation. Derive actor from the authenticated principal. Commit business mutation, audit and published change revision atomically, plus receipt when commanded.
-- [ ] Evidence: migration repeat-apply/preservation checks and PostgreSQL tests for stale versions, actor spoofing, reason validation, all six types, inclusive/ongoing dates, invalid ranges, adjacent periods, different-project assignments, concurrent overlap rejection and archived-record restrictions. Archive/reopen preserves IDs, links and history.
+- [x] Extend apps/api/src/db/schema.ts through additive migrations for projects, contacts, engagements, budgets, audit and directory sync persistence. Preserve existing accounts, notes, receipts and client queues.
+- [x] Define runtime-validated request/response contracts in packages/contracts/src/index.ts and matching OpenAPI field schemas before browser integration. Cover project/contact/engagement CRUD, lifecycle, budgets and sync endpoints.
+- [x] Share domain transactions between REST and queued commands. Enforce expectedVersion; stale updates return 409 with current server representation. Derive actor from the authenticated principal. Commit business mutation, audit and published change revision atomically, plus receipt when commanded.
+- [x] Evidence: repeat-apply migrations and PostgreSQL checks cover stale versions, actor spoofing, reasons, all six types, inclusive/ongoing dates, invalid ranges, adjacency, multi-project assignments, concurrent overlap rejection and archived-record restrictions. Archive/reopen preserves IDs, links and history.
 
 ### 2. Authenticated directory/project APIs and integration checks
 
-- [ ] Add project/contact/engagement modules through apps/api/src/app.module.ts. Implement endpoint families in specs/DOMAIN_API.md, including versioned budget editing. Default project lists to active records; document bounded pagination and explicit archive filters.
-- [ ] Evidence: API integration checks prove anonymous and temporary-password access denied, ADMIN/SUPERUSER shared access, server-derived audit actors, no contact-created users or contact login, metadata round-trips, budget baseline/history, archive/reopen and retained relationships. Concurrent admin edits cannot silently overwrite each other.
+- [x] Add project/contact/engagement modules through apps/api/src/app.module.ts. Implement endpoint families in specs/DOMAIN_API.md, including versioned budget editing. Default project lists to active records; document bounded pagination and explicit archive filters.
+- [x] Evidence: API integration checks prove anonymous and temporary-password access denied, ADMIN/SUPERUSER shared access, server-derived audit actors, no contact-created users or contact login, metadata round-trips, budget baseline/history, archive/reopen and retained relationships. Concurrent admin edits cannot silently overwrite each other.
 
 ### 3. Directory offline commands, bootstrap/change-feed consistency, conflict handling and recovery
 
-- [ ] Extend the existing authenticated IndexedDB database through a forward schema migration, preserving database identity, notes, outbox and leases. Save local entity plus immutable command atomically with client-generated UUIDs.
-- [ ] Add bounded authenticated /sync/commands, consistent paginated /sync/bootstrap and commit-ordered /sync/changes. Use user-scoped receipts and canonical body comparison. Lost-reply retries return one saved result; same ID with a changed body returns 409 without another effect.
-- [ ] Sync parent contacts/projects before dependent links. Independent commands may succeed while invalid/conflicting commands remain reviewable. Editing after sending creates a fresh dependent command rather than changing the sent ID/body.
-- [ ] Preserve identity epochs, one-runner leases, authentication pause, pending-work logout review, export and account-switch barriers. Separate snapshots, local drafts and acknowledgments. Match acknowledgments to command/local revision so an old reply cannot overwrite a newer edit or mark it synced.
-- [ ] Evidence: PostgreSQL concurrency checks prove bootstrap data matches its cursor and paginated pulls miss no late commit. Browser checks prove tombstones, obsolete-cursor rebuild preserving pending work, offline reload/reconnect, parent ordering, immutable/lost-reply retries, held conflicts and explicit resolution, lease recovery, expired auth and cross-account fencing. Hold an acknowledgment, save a newer edit, release the reply and assert newer values/pending state survive.
+- [x] Extend the existing authenticated IndexedDB database through a forward schema migration, preserving database identity, notes, outbox and leases. Save local entity plus immutable command atomically with client-generated UUIDs.
+- [x] Add bounded authenticated /sync/commands, consistent paginated /sync/bootstrap and commit-ordered /sync/changes. Use user-scoped receipts and canonical body comparison. Lost-reply retries return one saved result; same ID with a changed body returns 409 without another effect.
+- [x] Sync parent contacts/projects before dependent links. Independent commands may succeed while invalid/conflicting commands remain reviewable. Editing after sending creates a fresh dependent command rather than changing the sent ID/body.
+- [x] Preserve identity epochs, one-runner leases, authentication pause, pending-work logout review, export and account-switch barriers. Separate snapshots, local drafts and acknowledgments. Match acknowledgments to command/local revision so an old reply cannot overwrite a newer edit or mark it synced. Queue a follow-up sync pass when a new command arrives during an active pass.
+- [x] Evidence: PostgreSQL checks prove bootstrap data matches its cursor and paginated pulls miss no late commit. Browser checks prove offline reload/reconnect, parent ordering, immutable/lost-reply retries, held conflicts and explicit resolution, lease recovery, delayed acknowledgments, expired auth and cross-account fencing. M1a tests retain tombstone/rebuild, pending-work, logout and account-isolation coverage.
 
 ### 4. Persian RTL mobile screens and project overview
 
-- [ ] Add projects, workers and suppliers navigation plus project/contact/engagement screens under apps/web/src/. Extend App.tsx, drafts/draft-repository.ts and styles.css while preserving existing workspace/identity boundaries.
-- [ ] Use one-column forms at 360 px, Persian RTL, Jalali input mapped to ISO date-only values, digit normalization, toman formatting, self-hosted fonts, visible focus and field-level errors.
-- [ ] Show local-save, pending, acknowledged and review-needed states, pending count and last successful sync time. Conflict UI shows local/server values and keep-server or revised-draft actions.
-- [ ] Overview shows project information, entered contract/budget metadata, owners and engagement drill-down. Project counts are distinct server projects matching filters before pagination. Per-project worker counts are distinct linked worker contacts, including historical links, labeled accordingly; engagement row counts are separate. Pending local rows are separate from server counts. Counts and drill-down share filters; cached values show last-sync status.
-- [ ] Evidence: screenshots of overview/create/edit, archive/reopen with links, offline/conflict review and 360 px RTL states. Browser assertions prove counts/filters/drill-down agree, labels/focus are usable, no page-wide overflow and pending work remains with its account. Video is optional if screenshots cannot show the behavior.
+- [x] Add projects, workers and suppliers navigation plus project/contact/engagement screens under apps/web/src/. Keep App.tsx and screen composition small, and preserve existing workspace/identity boundaries.
+- [x] Use one-column forms at 360 px, Persian RTL, Jalali input mapped to ISO date-only values, digit normalization, toman formatting, self-hosted fonts, visible focus and field-level errors.
+- [x] Show local-save, pending, acknowledged and review-needed states, pending count and last successful sync time. Conflict UI shows local/server values and keep-server or revised-draft actions.
+- [x] Overview shows project information, entered contract/budget metadata, owners and engagement drill-down. Project counts are distinct server projects matching filters before pagination. Per-project worker counts are distinct linked worker contacts, including historical links, labeled accordingly; engagement row counts are separate. Pending local rows are separate from server counts. Counts and drill-down share filters; cached values show last-sync status.
+- [x] Evidence: screenshots cover overview, archived history, offline queue and conflict review at 360 px. Browser assertions prove parent ordering, recovery, both conflict choices, count labels and no page-wide overflow. Video is not needed for the observed states.
 
 ### 5. End-to-end regression, performance measurement and handoff
 
-- [ ] Extend apps/api/scripts/verify-api.ts and verify-browser.ts with M1b acceptance cases. Preserve all M1a account, refresh, note, lease, logout and legacy-isolation regressions plus AUTH01-04, SYNC01-04, SYNC07, LOCAL02 and MOBILE01.
-- [ ] Run corepack pnpm lint, typecheck and format:check before implementation pushes. Run corepack pnpm verify:api, verify:browser and verify:m0 on isolated synthetic fixtures and the built application. Record commands/results and exact reviewed SHA.
-- [ ] Use five concurrent admin sessions, 10 active projects, 100 worker contacts and 30 supplier contacts. Document owner/archive/engagement/budget counts, hardware, payloads, warmup and sample counts. Record at least 200 warmed samples per ordinary project/contact/engagement/budget list/write path tested, including representative filters. Keep write-induced fixture changes documented. Require each ordinary list/write p95 below 1,000 ms, excluding external network latency.
-- [ ] Measure dispatch-to-visible sync acknowledgment p50/p95 and auth/me context timing. Report sample counts and slow cases. There is no one-second sync gate or relative-regression percentage gate. Record cold starts and actual-device timings separately.
-- [ ] Review final diff and evidence for authorization, data loss, domain correctness and scope. Resolve findings on their merits; rerun affected checks after changes. No mandatory agent, reviewer or browser-lane count.
-- [ ] Prepare one PR targeting main with scope, evidence, screenshots, performance measurements and limitations. Stop at STACK-READY at the exact reviewed head for operator UI review/landing. Do not merge or deploy as part of implementation handoff.
+- [x] Extend apps/api/scripts/verify-api.ts and verify-browser.ts with M1b acceptance cases. Preserve M1a account, refresh, note, lease, logout and legacy-isolation regressions plus the in-scope AUTH, SYNC, date and mobile cases.
+- [x] Run lint, typecheck, format:check, verify:api, verify:browser and verify:m0 on synthetic fixtures and the built application. Record commands/results and the exact reviewed SHA in this handoff.
+- [x] Measure five concurrent admin sessions against 10 active and 2 archived projects, 10 owners, 100 workers, 30 suppliers, 200 seeded engagements and 20 budget lines. Record 200 warmed samples for every ordinary project/contact/engagement/budget list and write path.
+- [x] Measure sync command acknowledgment and auth/me p50/p95 with no one-second sync or relative-regression gate. Report exact sample counts and hardware. Actual-device and cold-start timings remain outside this local benchmark.
+- [x] Review the implementation diff and evidence for authorization, data loss, domain correctness and agreed scope. Resolve concrete findings and rerun affected checks. No mandatory agent, reviewer or browser-lane count.
+- [ ] Prepare and push one draft PR targeting main with scope, evidence, screenshots, performance measurements and limitations. Stop for operator UI review. Do not merge or deploy as part of this handoff.
 
 ## Acceptance and tooling
 
@@ -70,8 +70,27 @@ M1b uses synthetic Persian names, owner/worker/supplier roles, a multi-role cont
 
 M1b delivers project information, defined counts, filters and drill-down. M2 adds labor analytics and statements from finalized earnings/deductions/payments. M3 adds procurement, supplier-debt, stock and consumption analytics. M4 combines those sources with expenses, approved claims and receipts for financial reports, cash/cost distinctions and budget variance. Charts wait for their source modules; missing metrics are deferred, never invented or presented as fabricated zeroes. DELIVERY.md assigns ownership; specs/ACCEPTANCE.md provides later reconciliation fixtures.
 
-## Remaining risks and next action
+## Verification results and remaining limitations
 
-The largest risk is extending note-only sync to shared versioned directories with consistent bootstrap and recovery. Prove unit 3 invariants before expanding UI. Enforce overlap and archived-assignment rules under database concurrency, not only in forms. No prototype or new application verification has run for this planning revision.
+Final local verification passed with `pnpm.cmd verify:m0`: lint, TypeScript, formatting, repeat migrations/seeding, bootstrap, production build, storage put/get, API integration and all 9 built-browser tests passed. The browser run retained all 6 M1a regression cases and passed 3 M1b directory cases. `pnpm.cmd verify:performance` also passed; it measured 200 samples for each path below.
 
-The supplied scope/domain/process decisions are resolved in DECISIONS.md and the specifications. Next: review, commit and push only the planning revision, then wait for explicit implementation authorization. Before implementation, refresh main and verify the M1a baseline. Report environment limitations without claiming preview or production proof.
+| API path                    |       p95 |
+| --------------------------- | --------: |
+| Projects list               |  34.00 ms |
+| Contacts list               |  41.94 ms |
+| Engagements list            |  61.52 ms |
+| Budgets list                |  36.24 ms |
+| Project writes              |  93.62 ms |
+| Contact writes              | 120.12 ms |
+| Engagement writes           | 194.26 ms |
+| Budget writes               | 118.01 ms |
+| Sync command acknowledgment | 156.43 ms |
+| Auth/me                     |  25.17 ms |
+
+The warmed API benchmark is recorded in [m1b-api-performance.json](output/perf/m1b-api-performance.json). It used five concurrent authenticated ADMIN sessions on Windows x64, Node 24.8.0, an Intel i7-8550U with 8 logical CPUs and 11.9 GiB available memory. The fixture had 10 active projects, 2 archived projects, 10 owners, 100 workers, 30 suppliers, 200 engagements, 20 budget lines and 200 measured writes per list/write resource. Each ordinary list/write path had 200 samples after 10 read warmups; loopback response-body reads are included. The maximum ordinary p95 was engagement writes at 194.26 ms, below the 1,000 ms target. Sync acknowledgment p95 was 156.43 ms and auth/me p95 was 25.17 ms; neither has a pass/fail latency gate.
+
+Screenshot evidence is under [output/playwright/m1b](output/playwright/m1b): `m1b-mobile-project-overview.png`, `m1b-mobile-archived-project-history.png`, `m1b-mobile-offline-queue.png` and `m1b-mobile-conflict-review.png`. These are local synthetic-data browser captures at 360 px; they are UI review evidence, not actual-device or production proof.
+
+The web build emits a 600.75 KB minified JavaScript chunk warning. The local benchmark does not measure actual-device or cold-start performance. No preview deployment, production data, or production deployment was used. M2-M4 financial analytics remain deferred until their source modules deliver finalized data; M1b displays no fabricated financial metrics.
+
+Next: commit and push the implementation, then open a draft PR. Stop for review before merge or deployment. The measured report's `baseRevision` field identifies its base checkout (`8319ed7`); this plan and the PR identify the exact final reviewed commit after it is created.

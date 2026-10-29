@@ -1,0 +1,120 @@
+{
+  "measuredAt": "2026-10-29T09:37:11.089Z",
+  "baseRevision": "8319ed7785a41956495cde7be750ec3905171bfb",
+  "sourceState": "implementation working tree",
+  "platform": "win32 x64",
+  "node": "v24.8.0",
+  "cpu": "Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz",
+  "logicalCpus": 8,
+  "memoryGiB": 11.9,
+  "sessions": 5,
+  "concurrency": 5,
+  "dataset": {
+    "activeProjects": 10,
+    "archivedProjects": 2,
+    "owners": 10,
+    "workers": 100,
+    "suppliers": 30,
+    "engagements": 200,
+    "budgetLines": 20,
+    "projectsWithOwner": 10,
+    "multiRoleContacts": 1,
+    "timingWritesAdded": {
+      "projects": 200,
+      "contacts": 200,
+      "engagements": 200,
+      "budgets": 200,
+      "syncContacts": 210
+    }
+  },
+  "method": {
+    "warmupsPerReadPath": 10,
+    "samplesPerPath": 200,
+    "sampleStyle": "five authenticated ADMIN sessions issue requests in concurrent batches; elapsed time includes response body read",
+    "writePaths": "each measured write creates one synthetic record/line so requests do not contend on one record version",
+    "network": "loopback HTTP; no external network latency"
+  },
+  "results": {
+    "projects_list": {
+      "samples": 200,
+      "p50Ms": 24.08,
+      "p95Ms": 34,
+      "maxMs": 39.14,
+      "averageRequestBytes": 0,
+      "averageResponseBytes": 4952
+    },
+    "contacts_list": {
+      "samples": 200,
+      "p50Ms": 25.94,
+      "p95Ms": 41.94,
+      "maxMs": 54.77,
+      "averageRequestBytes": 0,
+      "averageResponseBytes": 36020
+    },
+    "engagements_list": {
+      "samples": 200,
+      "p50Ms": 34.63,
+      "p95Ms": 61.52,
+      "maxMs": 86.66,
+      "averageRequestBytes": 0,
+      "averageResponseBytes": 87529
+    },
+    "budgets_list": {
+      "samples": 200,
+      "p50Ms": 24.34,
+      "p95Ms": 36.24,
+      "maxMs": 44.29,
+      "averageRequestBytes": 0,
+      "averageResponseBytes": 603
+    },
+    "projects_write": {
+      "samples": 200,
+      "p50Ms": 65.82,
+      "p95Ms": 93.62,
+      "maxMs": 231.22,
+      "averageRequestBytes": 128,
+      "averageResponseBytes": 406
+    },
+    "contacts_write": {
+      "samples": 200,
+      "p50Ms": 64.67,
+      "p95Ms": 120.12,
+      "maxMs": 277.38,
+      "averageRequestBytes": 112,
+      "averageResponseBytes": 365
+    },
+    "engagements_write": {
+      "samples": 200,
+      "p50Ms": 86.1,
+      "p95Ms": 194.26,
+      "maxMs": 349.94,
+      "averageRequestBytes": 183,
+      "averageResponseBytes": 436
+    },
+    "budgets_write": {
+      "samples": 200,
+      "p50Ms": 64.36,
+      "p95Ms": 118.01,
+      "maxMs": 211.48,
+      "averageRequestBytes": 134,
+      "averageResponseBytes": 293
+    },
+    "sync_command_ack": {
+      "samples": 200,
+      "p50Ms": 86.66,
+      "p95Ms": 156.43,
+      "maxMs": 369.56,
+      "averageRequestBytes": 266,
+      "averageResponseBytes": 512
+    },
+    "auth_me": {
+      "samples": 200,
+      "p50Ms": 14.85,
+      "p95Ms": 25.17,
+      "maxMs": 27.59,
+      "averageRequestBytes": 0,
+      "averageResponseBytes": 180
+    }
+  },
+  "target": "Each ordinary list/write path p95 below 1000 ms. Sync acknowledgement and auth/me are reported without a latency pass/fail threshold."
+}

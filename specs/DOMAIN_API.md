@@ -96,7 +96,7 @@ Reports:
 - Budget variance: category budget minus incurred category cost.
 - Management earned margin: approved claims minus incurred cost. Label basis explicitly; never label contract value minus payments as actual profit.
 
-## Planned endpoint families
+## Implemented and planned endpoint families
 
 Prefix /api/v1. Auth responses and sensitive API data use Cache-Control: no-store. Browser-managed offline snapshots are separate from HTTP caching.
 
@@ -115,13 +115,16 @@ Prefix /api/v1. Auth responses and sensitive API data use Cache-Control: no-stor
 | POST /admins/:id/status | implemented; superuser only; disable or reactivate an ADMIN |
 | POST /drafts | implemented; require a full session, create the draft with the server-selected author and claim a user-scoped receipt atomically |
 | GET /drafts/:id | implemented; require a full session and return only a draft owned by that user |
-| GET, POST /projects | paginated list/create; explicit lifecycle fields |
-| GET, PATCH /projects/:id | project detail/update with expectedVersion |
-| POST /projects/:id/lifecycle | M1b archive/reopen only, expectedVersion and required reason; financial completion deferred |
-| GET, POST, PATCH /contacts | M1b typed directory and soft archive |
+| GET, POST /projects | M1b implemented; active projects are the default list; `archived=true` selects archived records; cursor and bounded limit pagination |
+| GET, PATCH /projects/:id | M1b implemented; detail includes owner, assignment history, budgets and distinct worker count; update requires `expectedVersion` |
+| POST /projects/:id/lifecycle | M1b implemented; archive/reopen requires `expectedVersion` and a nonblank reason; does not certify financial completion |
+| GET, POST /contacts | M1b implemented; shared contacts use independent worker/supplier/owner flags and are not login accounts |
+| PATCH /contacts/:id | M1b implemented; expectedVersion protects edits |
+| POST /contacts/:id/lifecycle | M1b implemented; archive/reopen requires a reason; historical assignments remain available |
 | GET, POST, PATCH /materials | M3 typed material directory and soft archive |
-| GET, POST, PATCH /engagements | worker/project rates and type defaults |
-| GET, PUT /projects/:id/budgets | versioned budget lines and audit history |
+| GET, POST /engagements | M1b implemented; worker/project rates and six engagement types; inclusive effective dates and overlap restrictions |
+| PATCH /engagements/:id | M1b implemented; expectedVersion and the same transactional assignment restrictions apply |
+| GET, PUT /projects/:id/budgets | M1b implemented; editable labels, versioned amounts, retained baseline and audit history |
 | GET, POST /documents | type-filtered paginated list/create draft with discriminated kind payload |
 | GET, PATCH, DELETE /documents/:id | read; versioned edit/delete only while draft |
 | POST /documents/:id/finalize | online, commandId, expectedVersion; validate and post atomically |
@@ -132,12 +135,14 @@ Prefix /api/v1. Auth responses and sensitive API data use Cache-Control: no-stor
 | POST /attachments/upload-ticket | target draft, filename/type/size; return expiring scoped URL and attachment ID |
 | POST /attachments/:id/complete | validate upload before READY; idempotent |
 | GET /attachments/:id/download | authorization then expiring private URL |
-| POST /sync/commands | bounded batch of draft/directory commands only; per-command result, no finalization |
-| GET /sync/bootstrap | versioned initial authorized workspace snapshot; bounded pages under consistent snapshot token |
-| GET /sync/changes?cursor= | authorized change feed with opaque cursor and tombstones; reset-required response if cursor obsolete |
+| POST /sync/commands | M1b implemented; authenticated batch of up to 100 immutable directory commands; per-command result; no financial finalization |
+| GET /sync/bootstrap | M1b implemented; stable snapshot ID, bounded pages, and a cursor matching the snapshot revision |
+| GET /sync/changes?cursor= | M1b implemented; repeatable-read, commit-ordered change page with cursor, high watermark and reset-required errors for invalid cursors |
 | GET /health/live, /health/ready | process liveness; dependency readiness without secrets |
 
-Every document kind must have a runtime-validated DTO and OpenAPI schema: EARNING, DEDUCTION, WORKER_PAYMENT, PURCHASE_INVOICE, SUPPLIER_PAYMENT, STOCK_RECEIPT, STOCK_ISSUE, STOCK_TRANSFER, STOCK_RETURN, SUPPLIER_RETURN, EXPENSE, EXPENSE_PAYMENT, OWNER_CLAIM, OWNER_RECEIPT, CONTRACT_AMENDMENT, REVERSAL. Reverse direction/refunds use explicit linked correction kinds, never negative values accepted into an unrelated normal form.
+M1b's machine-readable request, response, pagination and synchronization field schemas are in [openapi-m1b.yaml](openapi-m1b.yaml). Runtime Zod schemas live in `packages/contracts/src/index.ts`; the API derives audit actors from authenticated principals and commits directory changes, audit records and revisions transactionally. Directory receipts bind a user, command UUID and canonical request body. A repeated UUID/body returns the saved result; a repeated UUID with changed content conflicts.
+
+Every later financial document kind must also have a runtime-validated DTO and OpenAPI schema before its module is implemented: EARNING, DEDUCTION, WORKER_PAYMENT, PURCHASE_INVOICE, SUPPLIER_PAYMENT, STOCK_RECEIPT, STOCK_ISSUE, STOCK_TRANSFER, STOCK_RETURN, SUPPLIER_RETURN, EXPENSE, EXPENSE_PAYMENT, OWNER_CLAIM, OWNER_RECEIPT, CONTRACT_AMENDMENT, REVERSAL. Reverse direction/refunds use explicit linked correction kinds, never negative values accepted into an unrelated normal form.
 
 Example earning draft:
 
@@ -147,4 +152,4 @@ Example earning draft:
 
 Server responds with id, version, DRAFT status and calculated amountToman "3000000". Caller totals are not trusted. Manually approved earnings replace quantity/rate with amountToman and required period/milestone description.
 
-Errors use {code,message,fieldErrors,requestId,currentVersion?}. 400 malformed, 401 login required, 403 forbidden, 404 missing, 409 stale version/duplicate mismatch/dependency/stock conflict, 422 business validation, 429 throttled. Do not automatically retry 409/422. Report pagination is cursor-based with bounded page sizes. Generate the exact OpenAPI field schemas during the relevant milestone before frontend integration; this document defines semantics, not a finished machine-readable OpenAPI file.
+Errors use {code,message,fieldErrors,requestId,currentVersion?}. 400 malformed, 401 login required, 403 forbidden, 404 missing, 409 stale version/duplicate mismatch/dependency/stock conflict, 422 business validation, 429 throttled. Do not automatically retry 409/422. Report pagination is cursor-based with bounded page sizes. M1b request, response, pagination and synchronization schemas are implemented in [openapi-m1b.yaml](openapi-m1b.yaml); each later financial module must add its own runtime-validated DTOs and OpenAPI schemas before frontend integration.

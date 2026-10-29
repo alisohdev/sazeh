@@ -39,9 +39,9 @@ All fixtures are synthetic. Amounts below are toman. Run calculation tests witho
 | MOBILE01 | 360 px Android viewport and actual phone | All forms usable, focus visible, no page-wide overflow, tap targets adequate. |
 | OPS01 | Restore DB + referenced files to clean environment | Sample statements, attachments and finalized totals match backup. |
 
-## M1b planned acceptance
+## M1b acceptance
 
-These are implementation requirements, not completed verification. Use PostgreSQL API/concurrency checks and the built application for browser recovery checks. Observable behavior is required; fixed agent/browser-lane counts are not. Preserve the full M1a suite.
+These outcomes define M1b acceptance. Evidence from PostgreSQL API/concurrency checks, the built application, screenshots and the warmed API report is recorded in [M1B_PLAN.md](../M1B_PLAN.md). Observable behavior is required; fixed agent/browser-lane counts are not. Preserve the full M1a suite.
 
 | Test | Scenario | Required result |
 |---|---|---|

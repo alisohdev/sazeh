@@ -1,0 +1,524 @@
+openapi: 3.1.0
+info:
+  title: Sazeh M1b Directory API
+  version: 1.0.0
+  description: Authenticated project, contact, engagement, budget, and offline directory sync contracts.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+paths:
+  /v1/projects:
+    get:
+      summary: List projects
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: archived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Cursor page. The default includes active projects only.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectInput' }
+      responses:
+        '201':
+          description: Created project with version and audit provenance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      summary: Read project details, budgets, and assignment history
+      responses:
+        '200':
+          description: Project details, owner, engagements, budgets, and distinct worker count.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Update a project using optimistic concurrency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ProjectInput'
+                - type: object
+                  required: [expectedVersion]
+                  properties:
+                    expectedVersion: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Updated project.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/projects/{id}/lifecycle:
+    post:
+      summary: Archive or reopen a project with an audited reason
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, action, reason]
+              properties:
+                expectedVersion: { type: integer, minimum: 0 }
+                action: { type: string, enum: [ARCHIVE, REOPEN] }
+                reason: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201':
+          description: Updated project lifecycle and audit event.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/contacts:
+    get:
+      summary: List contacts by role and archive status
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: role
+          in: query
+          schema: { type: string, enum: [worker, supplier, owner] }
+        - name: archived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Cursor page of shared business contacts; contacts are not login accounts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContactPage' }
+    post:
+      summary: Create a shared contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContactInput' }
+      responses:
+        '201':
+          description: Created contact.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Contact' }
+  /v1/contacts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      summary: Update a contact using optimistic concurrency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ContactInput'
+                - type: object
+                  required: [expectedVersion]
+                  properties:
+                    expectedVersion: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Updated contact.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Contact' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/contacts/{id}/lifecycle:
+    post:
+      summary: Archive or reopen a contact with an audited reason
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, action, reason]
+              properties:
+                expectedVersion: { type: integer, minimum: 0 }
+                action: { type: string, enum: [ARCHIVE, REOPEN] }
+                reason: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201':
+          description: Updated contact lifecycle and audit event.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Contact' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/engagements:
+    get:
+      summary: List worker-project engagements
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: projectId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: workerId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Cursor page of assignments including archived historical records.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngagementPage' }
+    post:
+      summary: Create an engagement; overlapping periods for a worker/project are rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EngagementInput' }
+      responses:
+        '201':
+          description: Created engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/engagements/{id}:
+    patch:
+      summary: Update an engagement using optimistic concurrency
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/EngagementInput'
+                - type: object
+                  required: [expectedVersion]
+                  properties:
+                    expectedVersion: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Updated engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/projects/{id}/budgets:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      summary: List editable project budget labels and retained baselines
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Cursor page of versioned budget lines.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetPage' }
+    put:
+      summary: Create or update project budget lines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required: [id, category, amountToman, expectedVersion]
+                properties:
+                  id: { type: string, format: uuid }
+                  category: { type: string, minLength: 1, maxLength: 100 }
+                  amountToman: { $ref: '#/components/schemas/Toman' }
+                  expectedVersion: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Updated budget lines with original baselines preserved.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Budget' } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/sync/commands:
+    post:
+      summary: Apply a bounded batch of immutable offline directory commands
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 100
+              items: { $ref: '#/components/schemas/DirectoryCommand' }
+      responses:
+        '201':
+          description: Per-command success or conflict result. Receipts are account-scoped.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      oneOf:
+                        - type: object
+                          required: [ok, result]
+                          properties:
+                            ok: { const: true }
+                            result: { $ref: '#/components/schemas/DirectoryAcknowledgement' }
+                        - type: object
+                          required: [ok, commandId, status, error]
+                          properties:
+                            ok: { const: false }
+                            commandId: { type: string, format: uuid }
+                            status: { type: integer }
+                            error: { type: object, additionalProperties: true }
+  /v1/sync/bootstrap:
+    get:
+      summary: Start or continue a stable paginated workspace snapshot
+      parameters:
+        - name: snapshotId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: after
+          in: query
+          description: Opaque page cursor returned as nextCursor.
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Snapshot page and corresponding change-feed cursor.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BootstrapPage' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/sync/changes:
+    get:
+      summary: Read committed changes after a revision cursor
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, pattern: '^\\d+$', default: '0' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Commit-ordered page of snapshots/tombstones.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangePage' }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+  responses:
+    Unauthorized:
+      description: No valid full authenticated session.
+    InvalidInput:
+      description: Request data failed runtime validation.
+    NotFound:
+      description: Record was not found.
+    Conflict:
+      description: Stale version, duplicate command mismatch, invalid lifecycle or dependency conflict.
+  schemas:
+    Toman:
+      type: string
+      pattern: '^(0|[1-9][0-9]*)$'
+      example: '12500000'
+    DateOnly:
+      type: string
+      format: date
+      example: '2026-10-28'
+    ContactInput:
+      type: object
+      additionalProperties: false
+      required: [displayName, phone, isWorker, isSupplier, isOwner]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 160 }
+        phone: { type: [string, 'null'], maxLength: 40 }
+        isWorker: { type: boolean }
+        isSupplier: { type: boolean }
+        isOwner: { type: boolean }
+    Contact:
+      allOf:
+        - $ref: '#/components/schemas/ContactInput'
+        - type: object
+          required: [id, archived, version]
+          properties:
+            id: { type: string, format: uuid }
+            archived: { type: boolean }
+            version: { type: integer, minimum: 1 }
+    ProjectInput:
+      type: object
+      additionalProperties: false
+      required: [name, ownerContactId, startsOn, endsOn, contractInitialToman]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        ownerContactId: { type: [string, 'null'], format: uuid }
+        startsOn: { type: [string, 'null'], format: date }
+        endsOn: { type: [string, 'null'], format: date }
+        contractInitialToman: { $ref: '#/components/schemas/Toman' }
+    Project:
+      allOf:
+        - $ref: '#/components/schemas/ProjectInput'
+        - type: object
+          required: [id, lifecycle, archiveReason, version]
+          properties:
+            id: { type: string, format: uuid }
+            lifecycle: { type: string, enum: [ACTIVE, ARCHIVED] }
+            archiveReason: { type: [string, 'null'] }
+            version: { type: integer, minimum: 1 }
+    ProjectDetail:
+      allOf:
+        - $ref: '#/components/schemas/Project'
+        - type: object
+          required: [owner, engagements, budgets, workerCount]
+          properties:
+            owner: { oneOf: [{ $ref: '#/components/schemas/Contact' }, { type: 'null' }] }
+            engagements: { type: array, items: { $ref: '#/components/schemas/Engagement' } }
+            budgets: { type: array, items: { $ref: '#/components/schemas/Budget' } }
+            workerCount: { type: integer, minimum: 0 }
+    EngagementInput:
+      type: object
+      additionalProperties: false
+      required: [workerId, projectId, type, defaultRateToman, startsOn, endsOn]
+      properties:
+        workerId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        type: { type: string, enum: [DAILY, HOURLY, QUANTITY, MONTHLY, FIXED_CONTRACT, MANUAL] }
+        defaultRateToman: { $ref: '#/components/schemas/Toman' }
+        startsOn: { $ref: '#/components/schemas/DateOnly' }
+        endsOn: { oneOf: [{ $ref: '#/components/schemas/DateOnly' }, { type: 'null' }] }
+    Engagement:
+      allOf:
+        - $ref: '#/components/schemas/EngagementInput'
+        - type: object
+          required: [id, archived, version]
+          properties:
+            id: { type: string, format: uuid }
+            archived: { type: boolean }
+            version: { type: integer, minimum: 1 }
+    Budget:
+      type: object
+      required: [id, projectId, category, amountToman, baselineToman, version]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        category: { type: string, minLength: 1, maxLength: 100 }
+        amountToman: { $ref: '#/components/schemas/Toman' }
+        baselineToman: { $ref: '#/components/schemas/Toman' }
+        version: { type: integer, minimum: 1 }
+    ProjectPage:
+      $ref: '#/components/schemas/Page'
+    ContactPage:
+      $ref: '#/components/schemas/Page'
+    EngagementPage:
+      $ref: '#/components/schemas/Page'
+    BudgetPage:
+      $ref: '#/components/schemas/Page'
+    Page:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { type: object } }
+        nextCursor: { type: [string, 'null'] }
+    DirectoryCommand:
+      type: object
+      additionalProperties: false
+      required: [commandId, entityId, expectedVersion, kind, payload]
+      properties:
+        commandId: { type: string, format: uuid }
+        entityId: { type: string, format: uuid }
+        expectedVersion: { type: integer, minimum: 0 }
+        kind:
+          type: string
+          enum: [PROJECT_CREATE, PROJECT_UPDATE, PROJECT_LIFECYCLE, CONTACT_CREATE, CONTACT_UPDATE, CONTACT_LIFECYCLE, ENGAGEMENT_CREATE, ENGAGEMENT_UPDATE, BUDGET_SET]
+        payload: { type: object, additionalProperties: true }
+    DirectoryAcknowledgement:
+      type: object
+      required: [protocolVersion, commandId, entity, revision, replayed]
+      properties:
+        protocolVersion: { const: 1 }
+        commandId: { type: string, format: uuid }
+        entity: { type: object, additionalProperties: true }
+        revision: { type: string, pattern: '^\\d+$' }
+        replayed: { type: boolean }
+    BootstrapPage:
+      type: object
+      required: [protocolVersion, snapshotId, cursor, items, nextCursor]
+      properties:
+        protocolVersion: { const: 1 }
+        snapshotId: { type: string, format: uuid }
+        cursor: { type: string, pattern: '^\\d+$' }
+        items:
+          type: array
+          items:
+            type: object
+            required: [entityType, entity]
+            properties:
+              entityType: { type: string, enum: [PROJECT, CONTACT, ENGAGEMENT, BUDGET] }
+              entity: { type: object, additionalProperties: true }
+        nextCursor: { type: [string, 'null'] }
+    ChangePage:
+      type: object
+      required: [changes, cursor, highWatermark, hasMore]
+      properties:
+        changes:
+          type: array
+          items:
+            type: object
+            required: [revision, entityType, entityId, snapshot]
+            properties:
+              revision: { type: integer, minimum: 1 }
+              entityType: { type: string, enum: [PROJECT, CONTACT, ENGAGEMENT, BUDGET] }
+              entityId: { type: string, format: uuid }
+              snapshot: { type: object, additionalProperties: true }
+        cursor: { type: string, pattern: '^\\d+$' }
+        highWatermark: { type: string, pattern: '^\\d+$' }
+        hasMore: { type: boolean }

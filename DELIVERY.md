@@ -19,6 +19,8 @@ All phases contribute to the agreed full V1. A phased build is not a reduction t
 - T104 (M1b): Account-scoped directory commands, consistent bootstrap/change feed, immutable retries, conflict recovery and shared-business authorization. These guarantees are required now; M5 broadens hardening.
 - T105 (M1b): Project information, explicitly defined counts, filters and drill-down. Show entered metadata; financial charts wait for source modules.
 
+**M1b implementation record:** The implementation branch delivers T102–T105 with additive PostgreSQL migrations, authenticated versioned APIs, account-scoped offline sync, and Persian RTL mobile screens. The full verification commands and per-unit evidence are in [M1B_PLAN.md](M1B_PLAN.md); the measured synthetic API fixture is in [output/perf/m1b-api-performance.json](output/perf/m1b-api-performance.json). The 360 px UI evidence is in [output/playwright/m1b](output/playwright/m1b). No actual-device, preview, or production claim is made.
+
 **Exit:** AUTH and M1b directory/project/sync/mobile acceptance tests pass; ordinary admin cannot manage accounts; shared directory updates are auditable, recoverable offline and usable on phone.
 
 ## M2 Workforce vertical slice

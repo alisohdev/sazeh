@@ -255,6 +255,53 @@ test("directory conflicts show local and server values and support both resoluti
   await expect(page.getByRole("heading", { name: `${keepLocalName} (نسخهٔ سرور)` })).toBeVisible();
 });
 
+test("expired change feed rebuild preserves local drafts and queued commands", async ({
+  page,
+  context,
+}) => {
+  const runId = requiredEnv("M1A_TEST_RUN_ID");
+  const username = requiredEnv("M1A_TEST_USERNAME");
+  const password = requiredEnv("M1A_TEST_PASSWORD");
+  const projectName = `پروژهٔ بازیابی ${runId.slice(0, 6)}`;
+  let expiredResponses = 0;
+  await page.setViewportSize({ width: 360, height: 800 });
+  await signIn(page, username, password);
+  await expect(page.getByRole("heading", { name: "پروژه‌ها و فهرست‌ها" })).toBeVisible();
+  await context.setOffline(true);
+  await page.getByLabel("نام پروژه").fill(projectName);
+  await page.getByLabel("مبلغ اولیهٔ قرارداد (تومان)").fill("۴۰۰۰۰۰۰");
+  await page.getByRole("button", { name: "ذخیرهٔ پروژه", exact: true }).click();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await page.route("**/api/v1/sync/commands", (route) =>
+    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
+  );
+  await page.route("**/api/v1/sync/changes**", async (route) => {
+    if (expiredResponses === 0) {
+      expiredResponses += 1;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "CURSOR_EXPIRED", resetRequired: true }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect.poll(() => expiredResponses).toBe(1);
+  await expect(page.getByText("فرمان‌های در صف: 1", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  await expect(page.getByText("فرمان‌های در صف: 1", { exact: true })).toBeVisible();
+});
+
 test("a delayed create acknowledgment preserves a newer local edit and its dependent command", async ({
   page,
   context,

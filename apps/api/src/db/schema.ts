@@ -145,6 +145,7 @@ export const businessAudit = pgTable("business_audit", {
 export const syncRevision = pgTable("sync_revision", {
   singleton: integer("singleton").primaryKey(),
   revision: integer("revision").notNull(),
+  minimumCursor: integer("minimum_cursor").notNull().default(0),
 });
 export const syncChanges = pgTable("sync_changes", {
   revision: integer("revision").primaryKey(),

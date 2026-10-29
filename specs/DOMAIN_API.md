@@ -137,7 +137,7 @@ Prefix /api/v1. Auth responses and sensitive API data use Cache-Control: no-stor
 | GET /attachments/:id/download | authorization then expiring private URL |
 | POST /sync/commands | M1b implemented; authenticated batch of up to 100 immutable directory commands; per-command result; no financial finalization |
 | GET /sync/bootstrap | M1b implemented; stable snapshot ID, bounded pages, and a cursor matching the snapshot revision |
-| GET /sync/changes?cursor= | M1b implemented; repeatable-read, commit-ordered change page with cursor, high watermark and reset-required errors for invalid cursors |
+| GET /sync/changes?cursor= | M1b implemented; repeatable-read, commit-ordered change page with cursor, high watermark and reset-required errors for invalid or expired cursors. Retain the latest 10,000 revisions; older cursors return 409 `CURSOR_EXPIRED` and clients rebuild server snapshots while preserving local drafts and outbox commands. |
 | GET /health/live, /health/ready | process liveness; dependency readiness without secrets |
 
 M1b's machine-readable request, response, pagination and synchronization field schemas are in [openapi-m1b.yaml](openapi-m1b.yaml). Runtime Zod schemas live in `packages/contracts/src/index.ts`; the API derives audit actors from authenticated principals and commits directory changes, audit records and revisions transactionally. Directory receipts bind a user, command UUID and canonical request body. A repeated UUID/body returns the saved result; a repeated UUID with changed content conflicts.

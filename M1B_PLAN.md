@@ -36,10 +36,10 @@ Check a box only when its named evidence exists. Use repository scripts, Postgre
 ### 3. Directory offline commands, bootstrap/change-feed consistency, conflict handling and recovery
 
 - [x] Extend the existing authenticated IndexedDB database through a forward schema migration, preserving database identity, notes, outbox and leases. Save local entity plus immutable command atomically with client-generated UUIDs.
-- [x] Add bounded authenticated /sync/commands, consistent paginated /sync/bootstrap and commit-ordered /sync/changes. Use user-scoped receipts and canonical body comparison. Lost-reply retries return one saved result; same ID with a changed body returns 409 without another effect.
+- [x] Add bounded authenticated /sync/commands, consistent paginated /sync/bootstrap and commit-ordered /sync/changes. Retain the latest 10,000 revisions and return `CURSOR_EXPIRED` with reset guidance for older cursors. Use user-scoped receipts and canonical body comparison. Lost-reply retries return one saved result; same ID with a changed body returns 409 without another effect.
 - [x] Sync parent contacts/projects before dependent links. Independent commands may succeed while invalid/conflicting commands remain reviewable. Editing after sending creates a fresh dependent command rather than changing the sent ID/body.
 - [x] Preserve identity epochs, one-runner leases, authentication pause, pending-work logout review, export and account-switch barriers. Separate snapshots, local drafts and acknowledgments. Match acknowledgments to command/local revision so an old reply cannot overwrite a newer edit or mark it synced. Queue a follow-up sync pass when a new command arrives during an active pass.
-- [x] Evidence: PostgreSQL checks prove bootstrap data matches its cursor and paginated pulls miss no late commit. Browser checks prove offline reload/reconnect, parent ordering, immutable/lost-reply retries, held conflicts and explicit resolution, lease recovery, delayed acknowledgments, expired auth and cross-account fencing. M1a tests retain tombstone/rebuild, pending-work, logout and account-isolation coverage.
+- [x] Evidence: PostgreSQL checks prove bootstrap data matches its cursor, paginated pulls miss no late commit, expired cursors return reset guidance, and REST/queued create/update paths reject archived project, worker and owner assignments. Browser checks prove offline reload/reconnect, parent ordering, immutable/lost-reply retries, held conflicts and explicit resolution, lease recovery, delayed acknowledgments, expired-cursor rebuild with drafts/outbox preserved, expired auth and cross-account fencing. M1a tests retain tombstone/rebuild, pending-work, logout and account-isolation coverage.
 
 ### 4. Persian RTL mobile screens and project overview
 
@@ -72,25 +72,25 @@ M1b delivers project information, defined counts, filters and drill-down. M2 add
 
 ## Verification results and remaining limitations
 
-Final local verification passed with `pnpm.cmd verify:m0`: lint, TypeScript, formatting, repeat migrations/seeding, bootstrap, production build, storage put/get, API integration and all 9 built-browser tests passed. The browser run retained all 6 M1a regression cases and passed 3 M1b directory cases. `pnpm.cmd verify:performance` also passed; it measured 200 samples for each path below.
+Final local verification passed with `pnpm.cmd verify:m0`: lint, TypeScript, formatting, repeat migrations/seeding, bootstrap, production build, storage put/get, API integration and all 10 built-browser tests passed. The browser run retained all 6 M1a regression cases and passed 4 M1b directory cases. `pnpm.cmd verify:performance` also passed; it measured 200 samples for each path below.
 
 | API path                    |       p95 |
 | --------------------------- | --------: |
-| Projects list               |  34.00 ms |
-| Contacts list               |  41.94 ms |
-| Engagements list            |  61.52 ms |
-| Budgets list                |  36.24 ms |
-| Project writes              |  93.62 ms |
-| Contact writes              | 120.12 ms |
-| Engagement writes           | 194.26 ms |
-| Budget writes               | 118.01 ms |
-| Sync command acknowledgment | 156.43 ms |
-| Auth/me                     |  25.17 ms |
+| Projects list               |  50.13 ms |
+| Contacts list               |  54.17 ms |
+| Engagements list            |  76.20 ms |
+| Budgets list                |  97.59 ms |
+| Project writes              | 191.05 ms |
+| Contact writes              | 162.14 ms |
+| Engagement writes           | 199.10 ms |
+| Budget writes               | 129.90 ms |
+| Sync command acknowledgment | 158.98 ms |
+| Auth/me                     |  44.33 ms |
 
-The warmed API benchmark is recorded in [m1b-api-performance.json](output/perf/m1b-api-performance.json). It used five concurrent authenticated ADMIN sessions on Windows x64, Node 24.8.0, an Intel i7-8550U with 8 logical CPUs and 11.9 GiB available memory. The fixture had 10 active projects, 2 archived projects, 10 owners, 100 workers, 30 suppliers, 200 engagements, 20 budget lines and 200 measured writes per list/write resource. Each ordinary list/write path had 200 samples after 10 read warmups; loopback response-body reads are included. The maximum ordinary p95 was engagement writes at 194.26 ms, below the 1,000 ms target. Sync acknowledgment p95 was 156.43 ms and auth/me p95 was 25.17 ms; neither has a pass/fail latency gate.
+The warmed API benchmark is recorded in [m1b-api-performance.json](output/perf/m1b-api-performance.json). It used five concurrent authenticated ADMIN sessions on Windows x64, Node 24.8.0, an Intel i7-8550U with 8 logical CPUs and 11.9 GiB available memory. The fixture had 10 active projects, 2 archived projects, 10 owners, 100 workers, 30 suppliers, 200 engagements, 20 budget lines and 200 measured writes per list/write resource. Each ordinary list/write path had 200 samples after 10 read warmups; loopback response-body reads are included. The maximum ordinary p95 was engagement writes at 199.10 ms, below the 1,000 ms target. Sync acknowledgment p95 was 158.98 ms and auth/me p95 was 44.33 ms; neither has a pass/fail latency gate.
 
 Screenshot evidence is under [output/playwright/m1b](output/playwright/m1b): `m1b-mobile-project-overview.png`, `m1b-mobile-archived-project-history.png`, `m1b-mobile-offline-queue.png` and `m1b-mobile-conflict-review.png`. These are local synthetic-data browser captures at 360 px; they are UI review evidence, not actual-device or production proof.
 
-The web build emits a 600.75 KB minified JavaScript chunk warning. The local benchmark does not measure actual-device or cold-start performance. No preview deployment, production data, or production deployment was used. M2-M4 financial analytics remain deferred until their source modules deliver finalized data; M1b displays no fabricated financial metrics.
+The web build emits a 604.60 KB minified JavaScript chunk warning. The local benchmark does not measure actual-device or cold-start performance. No preview deployment, production data, or production deployment was used. M2-M4 financial analytics remain deferred until their source modules deliver finalized data; M1b displays no fabricated financial metrics.
 
-Next: commit and push the implementation, then open a draft PR. Stop for review before merge or deployment. The measured report's `baseRevision` field identifies its base checkout (`8319ed7`); this plan and the PR identify the exact final reviewed commit after it is created.
+Next: commit and push the implementation, then open a draft PR. Stop for review before merge or deployment. The performance report's `baseRevision` field identifies the last committed implementation baseline (`0bfc192`); this plan and the PR identify the exact final reviewed commit after it is created.

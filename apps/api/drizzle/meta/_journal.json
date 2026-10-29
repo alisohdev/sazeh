@@ -36,6 +36,13 @@
       "when": 1793219130548,
       "tag": "0004_m1b_bootstrap_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793267843672,
+      "tag": "0005_change_feed_retention",
+      "breakpoints": true
     }
   ]
 }

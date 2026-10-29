@@ -808,6 +808,7 @@ export function openDraftWorkspace(
           )
             return;
           if (error instanceof ApiError && isAuthenticationCode(error.code)) {
+            await markPendingDraftsAuthRequired(store, owner, lease.generation);
             await workspaceControl.pauseSync(user.id, epoch);
             await store.directoryDrafts.update(entry.entityId, {
               syncState: "PENDING",
@@ -835,6 +836,7 @@ export function openDraftWorkspace(
           const problem = (await response.json().catch(() => undefined)) as
             { code?: string } | undefined;
           if (response.status === 401 || (problem?.code && isAuthenticationCode(problem.code))) {
+            await markPendingDraftsAuthRequired(store, owner, lease.generation);
             await workspaceControl.pauseSync(user.id, epoch);
             await store.directoryDrafts.update(entry.entityId, {
               syncState: "PENDING",
@@ -1028,6 +1030,7 @@ export function openDraftWorkspace(
       )
         return;
       if (error instanceof ApiError && isAuthenticationCode(error.code)) {
+        await markPendingDraftsAuthRequired(store, owner, lease.generation);
         await workspaceControl.pauseSync(user.id, epoch);
         return;
       }
@@ -1147,6 +1150,40 @@ export function openDraftWorkspace(
     });
     if (updated) notify();
     return updated;
+  }
+
+  async function markPendingDraftsAuthRequired(
+    store: WorkspaceDatabase,
+    owner: string,
+    generation: number,
+  ): Promise<void> {
+    const updated = await store.transaction(
+      "rw",
+      store.drafts,
+      store.outbox,
+      store.leases,
+      async () => {
+        const lease = await store.leases.get("sync");
+        if (
+          lease?.owner !== owner ||
+          lease.generation !== generation ||
+          lease.expiresAt <= Date.now()
+        )
+          return false;
+        for (const entry of await store.outbox.toArray()) {
+          const draft = await store.drafts.get(entry.entityId);
+          if (!draft || (draft.syncState !== "PENDING" && draft.syncState !== "RETRY_PENDING"))
+            continue;
+          await store.drafts.put({
+            ...draft,
+            syncState: "AUTH_REQUIRED",
+            problem: "برای ادامهٔ همگام‌سازی دوباره وارد شوید.",
+          });
+        }
+        return true;
+      },
+    );
+    if (updated) notify();
   }
 
   async function scheduleRetry(

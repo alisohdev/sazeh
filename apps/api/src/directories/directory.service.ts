@@ -32,6 +32,7 @@ type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Writer = Database | Tx;
 type ListResource = "projects" | "contacts" | "engagements" | "budgets";
 type ListCursor = { value: string; id: string };
+const CHANGE_FEED_RETENTION = 10_000;
 
 @Injectable()
 export class DirectoryService {
@@ -332,6 +333,12 @@ export class DirectoryService {
           throw new ConflictException({
             code: "CURSOR_INVALID",
             message: "The directory cursor is ahead of the current feed",
+            resetRequired: true,
+          });
+        if (after < (high?.minimumCursor ?? 0))
+          throw new ConflictException({
+            code: "CURSOR_EXPIRED",
+            message: "The directory cursor is older than the retained change feed",
             resetRequired: true,
           });
         const rows = await tx
@@ -747,6 +754,11 @@ export class DirectoryService {
     await tx
       .insert(syncChanges)
       .values({ revision, entityType, entityId, snapshot, actorUserId: actor.userId });
+    const minimumCursor = Math.max(next.minimumCursor, revision - CHANGE_FEED_RETENTION);
+    if (minimumCursor > next.minimumCursor) {
+      await tx.update(syncRevision).set({ minimumCursor }).where(eq(syncRevision.singleton, 1));
+      await tx.delete(syncChanges).where(lte(syncChanges.revision, minimumCursor));
+    }
     return revision;
   }
 }

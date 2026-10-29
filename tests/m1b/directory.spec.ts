@@ -372,6 +372,74 @@ test("a delayed create acknowledgment preserves a newer local edit and its depen
   expect(commandBodies[1]?.[0]?.payload).toMatchObject({ name: newName });
 });
 
+test("a surviving tab retries a directory upload after its sending tab closes", async ({
+  page,
+  context,
+}) => {
+  const runId = requiredEnv("M1A_TEST_RUN_ID");
+  const username = requiredEnv("M1A_TEST_USERNAME");
+  const password = requiredEnv("M1A_TEST_PASSWORD");
+  const projectName = `פרויקט התאוששות משלוח ${runId.slice(0, 6)}`;
+  let releaseFirstResponse!: () => void;
+  let resolveFirstRequest!: () => void;
+  const firstResponseHeld = new Promise<void>((resolve) => {
+    releaseFirstResponse = resolve;
+  });
+  const firstRequestSeen = new Promise<void>((resolve) => {
+    resolveFirstRequest = resolve;
+  });
+  const commandAttempts: Array<Array<Record<string, unknown>>> = [];
+
+  await page.setViewportSize({ width: 360, height: 800 });
+  await context.route("**/api/v1/sync/commands", async (route) => {
+    const commands = route.request().postDataJSON() as Array<Record<string, unknown>>;
+    if (commands[0]?.kind !== "PROJECT_CREATE") {
+      await route.continue();
+      return;
+    }
+    commandAttempts.push(commands);
+    if (commandAttempts.length === 1) {
+      const response = await route.fetch();
+      resolveFirstRequest();
+      await firstResponseHeld;
+      try {
+        await route.fulfill({ response });
+      } catch {
+        // Closing the sending page intentionally abandons this acknowledgment.
+      }
+      return;
+    }
+    await route.continue();
+  });
+
+  await signIn(page, username, password);
+  await context.setOffline(true);
+  await page.getByLabel("نام پروژه").fill(projectName);
+  await page.getByLabel("مبلغ اولیهٔ قرارداد (تومان)").fill("5000000");
+  await page.getByRole("button", { name: "ذخیرهٔ پروژه", exact: true }).click();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await firstRequestSeen;
+  expect(commandAttempts).toHaveLength(1);
+
+  const survivingPage = await context.newPage();
+  await survivingPage.setViewportSize({ width: 360, height: 800 });
+  await survivingPage.goto("/");
+  await expect(survivingPage.getByRole("heading", { name: projectName })).toBeVisible();
+  expect(commandAttempts).toHaveLength(1);
+
+  await page.close();
+  releaseFirstResponse();
+  await expect.poll(() => commandAttempts.length, { timeout: 65_000 }).toBe(2);
+  expect(commandAttempts[1]).toEqual(commandAttempts[0]);
+  await expect(survivingPage.getByText("فرمان‌های در صف: 0", { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await survivingPage.close();
+});
+
 async function signIn(page: Page, username: string, password: string) {
   await page.goto("/");
   const loginResponse = page.waitForResponse(

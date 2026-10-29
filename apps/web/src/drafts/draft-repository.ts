@@ -1089,7 +1089,12 @@ export function openDraftWorkspace(
       }
       for (const entry of directoryEntries) {
         const draft = await store.directoryDrafts.get(entry.entityId);
-        if (!draft || (draft.syncState !== "PENDING" && draft.syncState !== "RETRY_PENDING"))
+        if (
+          !draft ||
+          (draft.syncState !== "PENDING" &&
+            draft.syncState !== "RETRY_PENDING" &&
+            draft.syncState !== "SENDING")
+        )
           continue;
         const retryReadyAt = entry.retryAt > now ? entry.retryAt : now;
         earliest = Math.min(earliest, Math.max(retryReadyAt, leaseReadyAt));

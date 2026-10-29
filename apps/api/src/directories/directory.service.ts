@@ -407,8 +407,14 @@ export class DirectoryService {
     if (kind === "PROJECT_UPDATE") {
       const value = ProjectInputSchema.parse(input);
       const current = await this.currentProject(tx, id, expectedVersion);
-      if (value.ownerContactId && value.ownerContactId !== current.ownerContactId)
+      if (value.ownerContactId && value.ownerContactId !== current.ownerContactId) {
+        if (current.lifecycle !== "ACTIVE")
+          throw new ConflictException({
+            code: "PROJECT_ARCHIVED",
+            message: "Archived projects cannot receive new owner assignments",
+          });
         await this.requireAssignableContact(tx, value.ownerContactId, "owner", true);
+      }
       const [row] = await tx
         .update(projects)
         .set({

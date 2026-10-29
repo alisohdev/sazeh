@@ -510,6 +510,95 @@ async function main(): Promise<void> {
       body: JSON.stringify({ expectedVersion: 3, action: "ARCHIVE", reason: "M1b final archive" }),
     });
     assert.equal(rearchive.status, 201);
+    const nextOwnerResponse = await adminA.request("/api/v1/contacts", {
+      method: "POST",
+      body: JSON.stringify({
+        displayName: "M1b verification next owner",
+        phone: null,
+        isWorker: false,
+        isSupplier: false,
+        isOwner: true,
+      }),
+    });
+    assert.equal(
+      nextOwnerResponse.status,
+      201,
+      "a second active owner is available for reassignment",
+    );
+    const nextOwner = (await nextOwnerResponse.json()) as { id: string };
+    const archivedProjectBeforeOwnerUpdate = (await (
+      await adminA.request(`/api/v1/projects/${project.id}`)
+    ).json()) as {
+      id: string;
+      version: number;
+      lifecycle: string;
+      ownerContactId: string | null;
+    };
+    assert.equal(archivedProjectBeforeOwnerUpdate.lifecycle, "ARCHIVED");
+    const changedOwnerPayload = {
+      name: "M1b verification project",
+      ownerContactId: nextOwner.id,
+      startsOn: "2026-10-01",
+      endsOn: "2026-12-31",
+      contractInitialToman: "120000000",
+    };
+    const archivedOwnerAssignment = await adminA.request(`/api/v1/projects/${project.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...changedOwnerPayload,
+        expectedVersion: archivedProjectBeforeOwnerUpdate.version,
+      }),
+    });
+    assert.equal(
+      archivedOwnerAssignment.status,
+      409,
+      "REST project updates cannot assign a new owner to an archived project",
+    );
+    const archivedQueuedOwnerAssignment = await submitDirectoryCommand(adminA, {
+      commandId: randomUUID(),
+      entityId: project.id,
+      expectedVersion: archivedProjectBeforeOwnerUpdate.version,
+      kind: "PROJECT_UPDATE",
+      payload: changedOwnerPayload,
+    });
+    assert.equal(
+      archivedQueuedOwnerAssignment.status,
+      409,
+      "queued project updates cannot assign a new owner to an archived project",
+    );
+    const archivedProjectAfterOwnerUpdate = (await (
+      await adminA.request(`/api/v1/projects/${project.id}`)
+    ).json()) as typeof archivedProjectBeforeOwnerUpdate;
+    assert.equal(
+      archivedProjectAfterOwnerUpdate.ownerContactId,
+      owner.id,
+      "rejected owner assignments preserve the existing project owner link",
+    );
+    const reopenAfterOwnerRejection = await adminA.request(
+      `/api/v1/projects/${project.id}/lifecycle`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          expectedVersion: archivedProjectAfterOwnerUpdate.version,
+          action: "REOPEN",
+          reason: "M1b reopen after rejected owner update",
+        }),
+      },
+    );
+    assert.equal(reopenAfterOwnerRejection.status, 201, "archived projects remain reopenable");
+    const reopenedProject = (await (
+      await adminA.request(`/api/v1/projects/${project.id}`)
+    ).json()) as typeof archivedProjectBeforeOwnerUpdate;
+    assert.equal(reopenedProject.lifecycle, "ACTIVE");
+    const finalArchive = await adminA.request(`/api/v1/projects/${project.id}/lifecycle`, {
+      method: "POST",
+      body: JSON.stringify({
+        expectedVersion: reopenedProject.version,
+        action: "ARCHIVE",
+        reason: "M1b final assignment verification",
+      }),
+    });
+    assert.equal(finalArchive.status, 201);
     assert.equal(
       (
         await adminA.request("/api/v1/engagements", {

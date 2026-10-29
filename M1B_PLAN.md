@@ -56,7 +56,7 @@ Check a box only when its named evidence exists. Use repository scripts, Postgre
 - [x] Measure five concurrent admin sessions against 10 active and 2 archived projects, 10 owners, 100 workers, 30 suppliers, 200 seeded engagements and 20 budget lines. Record 200 warmed samples for every ordinary project/contact/engagement/budget list and write path.
 - [x] Measure sync command acknowledgment and auth/me p50/p95 with no one-second sync or relative-regression gate. Report exact sample counts and hardware. Actual-device and cold-start timings remain outside this local benchmark.
 - [x] Review the implementation diff and evidence for authorization, data loss, domain correctness and agreed scope. Resolve concrete findings and rerun affected checks. No mandatory agent, reviewer or browser-lane count.
-- [ ] Prepare and push one draft PR targeting main with scope, evidence, screenshots, performance measurements and limitations. Stop for operator UI review. Do not merge or deploy as part of this handoff.
+- [x] Prepare and push draft PR [#4](https://github.com/alisohdev/sazeh/pull/4) targeting main with scope, verification evidence, screenshots, performance measurements and limitations. Stop for operator UI review. Do not merge or deploy as part of this handoff.
 
 ## Acceptance and tooling
 
@@ -93,4 +93,4 @@ Screenshot evidence is under [output/playwright/m1b](output/playwright/m1b): `m1
 
 The web build emits a 604.60 KB minified JavaScript chunk warning. The local benchmark does not measure actual-device or cold-start performance. No preview deployment, production data, or production deployment was used. M2-M4 financial analytics remain deferred until their source modules deliver finalized data; M1b displays no fabricated financial metrics.
 
-Next: commit and push the implementation, then open a draft PR. Stop for review before merge or deployment. The performance report's `baseRevision` field identifies the last committed implementation baseline (`0bfc192`); this plan and the PR identify the exact final reviewed commit after it is created.
+Draft PR [#4](https://github.com/alisohdev/sazeh/pull/4) is open for review. The performance report's `baseRevision` field identifies the last committed implementation baseline (`0bfc192`). Stop here for review; do not merge or deploy.

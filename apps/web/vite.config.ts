@@ -1,7 +1,9 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import process from "node:process";
+import { fileURLToPath, URL } from "node:url";
 
 const apiProxy = {
   "/api": {
@@ -12,7 +14,9 @@ const apiProxy = {
 
 export default defineConfig({
   envDir: "../..",
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   plugins: [
+    tailwindcss(),
     react(),
     VitePWA({
       registerType: "prompt",

@@ -13,10 +13,17 @@ import * as schema from "../src/db/schema.js";
 import {
   accountAudit,
   authenticatedReceipts,
+  businessAudit,
+  contacts,
+  directoryReceipts,
+  engagements,
   loginBuckets,
   noteDrafts,
+  projectBudgets,
+  projects,
   refreshTokens,
   sessions,
+  syncChanges,
   users,
 } from "../src/db/schema.js";
 
@@ -84,8 +91,9 @@ async function main(): Promise<void> {
 
     const apiPort = await freePort();
     const cliPath = require.resolve("@playwright/test/cli");
+    const browserArgs = process.argv.slice(2).filter((argument) => argument !== "--");
     const exitCode = await new Promise<number>((resolveExit, reject) => {
-      const child = spawn(process.execPath, [cliPath, "test"], {
+      const child = spawn(process.execPath, [cliPath, "test", ...browserArgs], {
         cwd: root,
         env: {
           ...process.env,
@@ -106,30 +114,44 @@ async function main(): Promise<void> {
     });
     assert.equal(exitCode, 0, "authenticated offline browser verification passes");
 
-    const syncedDrafts = await db.select().from(noteDrafts).where(eq(noteDrafts.text, syncMarker));
-    assert.equal(syncedDrafts.length, 1, "concurrent tabs create one server draft");
-    assert.equal(
-      syncedDrafts[0]!.authorUserId,
-      fixtures[0]!.id,
-      "server records the authenticated browser fixture as author",
-    );
-    const privateDrafts = await db
-      .select()
-      .from(noteDrafts)
-      .where(eq(noteDrafts.text, privateMarker));
-    assert.equal(
-      privateDrafts.length,
-      0,
-      "the next account never uploads the previous account's pending command",
-    );
+    if (browserArgs.length === 0) {
+      const syncedDrafts = await db
+        .select()
+        .from(noteDrafts)
+        .where(eq(noteDrafts.text, syncMarker));
+      assert.equal(syncedDrafts.length, 1, "concurrent tabs create one server draft");
+      assert.equal(
+        syncedDrafts[0]!.authorUserId,
+        fixtures[0]!.id,
+        "server records the authenticated browser fixture as author",
+      );
+      const privateDrafts = await db
+        .select()
+        .from(noteDrafts)
+        .where(eq(noteDrafts.text, privateMarker));
+      assert.equal(
+        privateDrafts.length,
+        0,
+        "the next account never uploads the previous account's pending command",
+      );
+    }
     process.stdout.write(
-      "Browser M1a verification passed: authenticated offline save, session expiry, cross-tab sync, explicit pending export and account isolation.\n",
+      browserArgs.length === 0
+        ? "Browser M1a/M1b verification passed: authenticated offline notes and directories, sync recovery, account isolation, parent ordering, conflict resolution and mobile RTL.\n"
+        : "Filtered authenticated browser verification passed.\n",
     );
   } finally {
     const ids = fixtures.map((fixture) => fixture.id);
     await db.transaction(async (tx) => {
       await tx.delete(accountAudit).where(inArray(accountAudit.actorUserId, ids));
       await tx.delete(accountAudit).where(inArray(accountAudit.targetUserId, ids));
+      await tx.delete(businessAudit).where(inArray(businessAudit.actorUserId, ids));
+      await tx.delete(syncChanges).where(inArray(syncChanges.actorUserId, ids));
+      await tx.delete(directoryReceipts).where(inArray(directoryReceipts.userId, ids));
+      await tx.delete(engagements).where(inArray(engagements.createdBy, ids));
+      await tx.delete(projectBudgets).where(inArray(projectBudgets.updatedBy, ids));
+      await tx.delete(projects).where(inArray(projects.createdBy, ids));
+      await tx.delete(contacts).where(inArray(contacts.createdBy, ids));
       await tx.delete(noteDrafts).where(inArray(noteDrafts.authorUserId, ids));
       await tx.delete(authenticatedReceipts).where(inArray(authenticatedReceipts.userId, ids));
       const fixtureSessions = await tx

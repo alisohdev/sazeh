@@ -1,0 +1,1 @@
+ALTER TABLE "sync_revision" ADD COLUMN "minimum_cursor" integer DEFAULT 0 NOT NULL;

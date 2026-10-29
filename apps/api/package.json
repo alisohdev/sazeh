@@ -15,6 +15,7 @@
     "bootstrap:superuser": "node --env-file=../../.env --import tsx scripts/bootstrap-superuser.ts",
     "verify:bootstrap": "node --env-file=../../.env --import tsx scripts/verify-bootstrap.ts",
     "verify:api": "node --env-file=../../.env --import tsx scripts/verify-api.ts",
+    "verify:performance": "node --env-file=../../.env --import tsx scripts/verify-performance.ts",
     "verify:browser": "node --env-file=../../.env --import tsx scripts/verify-browser.ts",
     "serve": "node --env-file=../../.env dist/main.js"
   },

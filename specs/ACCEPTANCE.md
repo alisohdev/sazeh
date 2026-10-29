@@ -39,9 +39,9 @@ All fixtures are synthetic. Amounts below are toman. Run calculation tests witho
 | MOBILE01 | 360 px Android viewport and actual phone | All forms usable, focus visible, no page-wide overflow, tap targets adequate. |
 | OPS01 | Restore DB + referenced files to clean environment | Sample statements, attachments and finalized totals match backup. |
 
-## M1b planned acceptance
+## M1b acceptance
 
-These are implementation requirements, not completed verification. Use PostgreSQL API/concurrency checks and the built application for browser recovery checks. Observable behavior is required; fixed agent/browser-lane counts are not. Preserve the full M1a suite.
+These outcomes define M1b acceptance. Evidence from PostgreSQL API/concurrency checks, the built application, screenshots and the warmed API report is recorded in [M1B_PLAN.md](../M1B_PLAN.md). Observable behavior is required; fixed agent/browser-lane counts are not. Preserve the full M1a suite.
 
 | Test | Scenario | Required result |
 |---|---|---|
@@ -53,7 +53,7 @@ These are implementation requirements, not completed verification. Use PostgreSQ
 | M1B-REL02 | Assign archived project/contact | New assignments rejected through REST and queued commands, including owner/worker assignment and changed endpoints; historical links preserved. |
 | M1B-AUTH01 | Restricted/full sessions and forged actor | Anonymous/temporary-password denied; ADMIN/SUPERUSER share business data; session-derived audit actor commits with mutation. |
 | M1B-SYNC01 | Offline save/reload, parent links, duplicate/lost reply | Atomic local save; parents before children; retry creates one result; changed body with same ID returns 409 without extra effect. |
-| M1B-SYNC02 | Concurrent commits, paginated bootstrap/feed, archive and expired cursor | Snapshot/cursor consistent; no late commit missed; tombstones applied; reset/rebuild preserves drafts/outbox. |
+| M1B-SYNC02 | Concurrent commits, paginated bootstrap/feed, archive and expired cursor | Snapshot/cursor consistent; no late commit missed; tombstones applied; API marks expired cursors for reset; rebuild preserves drafts/outbox. Browser checks show local work remains after reset. |
 | M1B-SYNC03 | Stale edits and held old acknowledgment after newer edit | Reviewable conflict; keep-server or revised fresh command; delayed reply cannot overwrite newer edit or mark it synced; sent command ID/body immutable. |
 | M1B-SYNC04 | Expiry/account switch, tab closure and schema recovery | Commands never cross accounts; auth pause, epoch/lease fencing, pending-work review/export, retries and queue migration preserve M1a guarantees and M0 quarantine. |
 | M1B-MOBILE01 | Project/directory recovery at 360 px RTL | Usable labels/focus/errors, Jalali/ISO round-trip and digit normalization; no page-wide overflow; screenshots for UI review. |

@@ -17,6 +17,168 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["SUPERUSER", "ADMIN"]);
+export const engagementType = pgEnum("engagement_type", [
+  "DAILY",
+  "HOURLY",
+  "QUANTITY",
+  "MONTHLY",
+  "FIXED_CONTRACT",
+  "MANUAL",
+]);
+
+export const contacts = pgTable("contacts", {
+  id: uuid("id").primaryKey(),
+  displayName: varchar("display_name", { length: 160 }).notNull(),
+  phone: varchar("phone", { length: 40 }),
+  isWorker: boolean("is_worker").notNull().default(false),
+  isSupplier: boolean("is_supplier").notNull().default(false),
+  isOwner: boolean("is_owner").notNull().default(false),
+  archived: boolean("archived").notNull().default(false),
+  version: integer("version").notNull().default(1),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id),
+  updatedBy: uuid("updated_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const projects = pgTable(
+  "projects",
+  {
+    id: uuid("id").primaryKey(),
+    name: varchar("name", { length: 160 }).notNull(),
+    ownerContactId: uuid("owner_contact_id").references(() => contacts.id),
+    startsOn: char("starts_on", { length: 10 }),
+    endsOn: char("ends_on", { length: 10 }),
+    lifecycle: varchar("lifecycle", { length: 12 }).notNull().default("ACTIVE"),
+    archiveReason: text("archive_reason"),
+    contractInitialToman: varchar("contract_initial_toman", { length: 24 }).notNull().default("0"),
+    version: integer("version").notNull().default(1),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("projects_lifecycle_name_idx").on(table.lifecycle, table.name)],
+);
+
+export const engagements = pgTable(
+  "engagements",
+  {
+    id: uuid("id").primaryKey(),
+    workerId: uuid("worker_id")
+      .notNull()
+      .references(() => contacts.id),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    type: engagementType("type").notNull(),
+    defaultRateToman: varchar("default_rate_toman", { length: 24 }).notNull(),
+    startsOn: char("starts_on", { length: 10 }).notNull(),
+    endsOn: char("ends_on", { length: 10 }),
+    archived: boolean("archived").notNull().default(false),
+    version: integer("version").notNull().default(1),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("engagements_worker_project_dates_idx").on(
+      table.workerId,
+      table.projectId,
+      table.startsOn,
+      table.endsOn,
+    ),
+  ],
+);
+
+export const projectBudgets = pgTable(
+  "project_budgets",
+  {
+    id: uuid("id").primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    category: varchar("category", { length: 100 }).notNull(),
+    amountToman: varchar("amount_toman", { length: 24 }).notNull(),
+    baselineToman: varchar("baseline_toman", { length: 24 }).notNull(),
+    version: integer("version").notNull().default(1),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("project_budgets_project_category_uq").on(table.projectId, table.category),
+  ],
+);
+
+export const businessAudit = pgTable("business_audit", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  actorUserId: uuid("actor_user_id")
+    .notNull()
+    .references(() => users.id),
+  actorSessionId: uuid("actor_session_id")
+    .notNull()
+    .references(() => sessions.id),
+  entityType: varchar("entity_type", { length: 24 }).notNull(),
+  entityId: uuid("entity_id").notNull(),
+  action: varchar("action", { length: 32 }).notNull(),
+  reason: text("reason"),
+  beforeValue: jsonb("before_value").$type<unknown>(),
+  afterValue: jsonb("after_value").$type<unknown>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const syncRevision = pgTable("sync_revision", {
+  singleton: integer("singleton").primaryKey(),
+  revision: integer("revision").notNull(),
+  minimumCursor: integer("minimum_cursor").notNull().default(0),
+});
+export const syncChanges = pgTable("sync_changes", {
+  revision: integer("revision").primaryKey(),
+  entityType: varchar("entity_type", { length: 24 }).notNull(),
+  entityId: uuid("entity_id").notNull(),
+  snapshot: jsonb("snapshot").$type<unknown>().notNull(),
+  actorUserId: uuid("actor_user_id")
+    .notNull()
+    .references(() => users.id),
+  committedAt: timestamp("committed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const directoryBootstrapSnapshots = pgTable("directory_bootstrap_snapshots", {
+  id: uuid("id").primaryKey(),
+  revision: integer("revision").notNull(),
+  items: jsonb("items")
+    .$type<Array<{ entityType: string; entity: Record<string, unknown> }>>()
+    .notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const directoryReceipts = pgTable(
+  "directory_command_receipts",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    commandId: uuid("command_id").notNull(),
+    bodyHash: char("body_hash", { length: 64 }).notNull(),
+    result: jsonb("result").$type<unknown>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.commandId] })],
+);
 
 export const users = pgTable(
   "users",

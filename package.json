@@ -20,6 +20,7 @@
     "bootstrap:superuser": "pnpm --filter @sazeh/api bootstrap:superuser",
     "verify:bootstrap": "pnpm --filter @sazeh/api verify:bootstrap",
     "verify:api": "pnpm --filter @sazeh/api verify:api",
+    "verify:performance": "pnpm --filter @sazeh/api verify:performance",
     "serve:local": "pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build && pnpm --filter @sazeh/api --filter @sazeh/web --parallel serve",
     "icons:generate": "node scripts/generate-pwa-icons.mjs",
     "verify:browser": "pnpm --filter @sazeh/api verify:browser",

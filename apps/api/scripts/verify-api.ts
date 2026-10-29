@@ -11,9 +11,17 @@ import * as schema from "../src/db/schema.js";
 import {
   accountAudit,
   authenticatedReceipts,
+  businessAudit,
+  contacts,
+  directoryReceipts,
+  engagements,
   noteDrafts,
+  projectBudgets,
+  projects,
   refreshTokens,
   sessions,
+  syncChanges,
+  syncRevision,
   users,
 } from "../src/db/schema.js";
 import { ACCESS_SECONDS } from "../src/identity/tokens.js";
@@ -120,6 +128,11 @@ async function main(): Promise<void> {
       "local mode does not provide an anonymous draft bypass",
     );
     assert.equal(
+      (await root.request("/api/v1/projects")).status,
+      401,
+      "directory reads require authentication",
+    );
+    assert.equal(
       (
         await root.request(
           "/api/v1/drafts",
@@ -202,6 +215,11 @@ async function main(): Promise<void> {
       "temporary-password session cannot access application routes",
     );
     assert.equal(
+      (await adminA.request("/api/v1/projects")).status,
+      403,
+      "temporary-password sessions cannot access directory APIs",
+    );
+    assert.equal(
       (await adminA.request("/api/v1/drafts", { method: "POST", body: JSON.stringify(commandA) }))
         .status,
       403,
@@ -240,6 +258,729 @@ async function main(): Promise<void> {
 
     const legacyRead = await adminA.request(`/api/v1/drafts/${legacy}`);
     assert.equal(legacyRead.status, 404, "legacy data has no inferred owner");
+
+    const ownerResponse = await adminA.request("/api/v1/contacts", {
+      method: "POST",
+      body: JSON.stringify({
+        displayName: "M1b verification owner",
+        phone: null,
+        isWorker: false,
+        isSupplier: false,
+        isOwner: true,
+        createdBy: fixtureId,
+        createdBy: fixtureId,
+      }),
+    });
+    assert.equal(
+      ownerResponse.status,
+      201,
+      `authenticated admin creates a shared owner contact: ${await ownerResponse.clone().text()}`,
+    );
+    const owner = (await ownerResponse.json()) as { id: string; version: number };
+    const workerResponse = await adminA.request("/api/v1/contacts", {
+      method: "POST",
+      body: JSON.stringify({
+        displayName: "M1b verification worker",
+        phone: null,
+        isWorker: true,
+        isSupplier: false,
+        isOwner: false,
+      }),
+    });
+    assert.equal(workerResponse.status, 201, "worker is a directory contact, not an account");
+    const worker = (await workerResponse.json()) as { id: string; version: number };
+    const projectResponse = await adminA.request("/api/v1/projects", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "M1b verification project",
+        ownerContactId: owner.id,
+        startsOn: "2026-10-01",
+        endsOn: "2026-12-31",
+        contractInitialToman: "120000000",
+      }),
+    });
+    assert.equal(projectResponse.status, 201, "authenticated admin creates a shared project");
+    const project = (await projectResponse.json()) as {
+      id: string;
+      version: number;
+      lifecycle: string;
+    };
+    assert.equal(project.lifecycle, "ACTIVE");
+    assert.equal(
+      (
+        await adminA.request(`/api/v1/projects/${project.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            expectedVersion: 0,
+            name: "Stale",
+            ownerContactId: owner.id,
+            startsOn: "2026-10-01",
+            endsOn: "2026-12-31",
+            contractInitialToman: "120000000",
+          }),
+        })
+      ).status,
+      409,
+      "stale project edits conflict",
+    );
+    const engagement = {
+      workerId: worker.id,
+      projectId: project.id,
+      type: "DAILY",
+      defaultRateToman: "2500000",
+      startsOn: "2026-10-01",
+      endsOn: "2026-10-31",
+    };
+    const assignedResponse = await adminA.request("/api/v1/engagements", {
+      method: "POST",
+      body: JSON.stringify(engagement),
+    });
+    assert.equal(assignedResponse.status, 201, "worker can be assigned with a dated default rate");
+    const assigned = (await assignedResponse.json()) as { id: string; version: number };
+    assert.equal(
+      (
+        await adminA.request("/api/v1/engagements", {
+          method: "POST",
+          body: JSON.stringify({ ...engagement, startsOn: "2026-10-31", endsOn: "2026-11-15" }),
+        })
+      ).status,
+      409,
+      "inclusive engagement end dates reject overlap",
+    );
+    assert.equal(
+      (
+        await adminA.request("/api/v1/engagements", {
+          method: "POST",
+          body: JSON.stringify({
+            ...engagement,
+            startsOn: "2026-11-01",
+            endsOn: null,
+            type: "HOURLY",
+          }),
+        })
+      ).status,
+      201,
+      "next-day period may be ongoing",
+    );
+    const additionalTypes = ["QUANTITY", "MONTHLY", "FIXED_CONTRACT", "MANUAL"] as const;
+    for (const type of additionalTypes) {
+      const response = await adminA.request("/api/v1/contacts", {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: `M1b ${type} worker`,
+          phone: null,
+          isWorker: true,
+          isSupplier: false,
+          isOwner: false,
+        }),
+      });
+      assert.equal(response.status, 201, `${type} worker contact is created`);
+      const typeWorker = (await response.json()) as { id: string };
+      const typeResult = await adminA.request("/api/v1/engagements", {
+        method: "POST",
+        body: JSON.stringify({
+          workerId: typeWorker.id,
+          projectId: project.id,
+          type,
+          defaultRateToman: "750000",
+          startsOn: "2026-10-01",
+          endsOn: "2026-10-31",
+        }),
+      });
+      assert.equal(typeResult.status, 201, `${type} engagement type is accepted`);
+    }
+    const concurrentWorkerResponse = await adminA.request("/api/v1/contacts", {
+      method: "POST",
+      body: JSON.stringify({
+        displayName: "M1b concurrent worker",
+        phone: null,
+        isWorker: true,
+        isSupplier: false,
+        isOwner: false,
+      }),
+    });
+    assert.equal(concurrentWorkerResponse.status, 201);
+    const concurrentWorker = (await concurrentWorkerResponse.json()) as { id: string };
+    const concurrentAssignments = await Promise.all(
+      [
+        { startsOn: "2026-11-01", endsOn: "2026-11-10" },
+        { startsOn: "2026-11-10", endsOn: "2026-11-20" },
+      ].map((dates) =>
+        adminA.request("/api/v1/engagements", {
+          method: "POST",
+          body: JSON.stringify({
+            ...engagement,
+            workerId: concurrentWorker.id,
+            ...dates,
+          }),
+        }),
+      ),
+    );
+    assert.deepEqual(
+      concurrentAssignments.map((response) => response.status).sort(),
+      [201, 409],
+      "concurrent same-day overlap is serialized and rejected",
+    );
+    const otherProjectResponse = await adminA.request("/api/v1/projects", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "M1b concurrent project",
+        ownerContactId: null,
+        startsOn: null,
+        endsOn: null,
+        contractInitialToman: "0",
+      }),
+    });
+    assert.equal(otherProjectResponse.status, 201);
+    const otherProject = (await otherProjectResponse.json()) as { id: string; version: number };
+    const otherAssignmentResponse = await adminA.request("/api/v1/engagements", {
+      method: "POST",
+      body: JSON.stringify({
+        ...engagement,
+        projectId: otherProject.id,
+        startsOn: "2026-10-01",
+        endsOn: null,
+      }),
+    });
+    assert.equal(
+      otherAssignmentResponse.status,
+      201,
+      "a worker may work on multiple projects during the same dates",
+    );
+    const otherAssignment = (await otherAssignmentResponse.json()) as {
+      id: string;
+      version: number;
+    };
+    const budgetId = randomUUID();
+    const budgetCreate = await adminA.request(`/api/v1/projects/${project.id}/budgets`, {
+      method: "PUT",
+      body: JSON.stringify([
+        { id: budgetId, category: "Labor", amountToman: "9000000", expectedVersion: 0 },
+      ]),
+    });
+    assert.equal(budgetCreate.status, 200, "versioned project budget row is created");
+    const budgetUpdate = await adminA.request(`/api/v1/projects/${project.id}/budgets`, {
+      method: "PUT",
+      body: JSON.stringify([
+        { id: budgetId, category: "Workforce", amountToman: "10000000", expectedVersion: 1 },
+      ]),
+    });
+    assert.equal(budgetUpdate.status, 200, "budget labels and entered amounts can be edited");
+    const budgetRows = (await budgetUpdate.json()) as Array<{
+      category: string;
+      amountToman: string;
+      baselineToman: string;
+      version: number;
+    }>;
+    assert.deepEqual(
+      {
+        category: budgetRows[0]?.category,
+        amount: budgetRows[0]?.amountToman,
+        baseline: budgetRows[0]?.baselineToman,
+        version: budgetRows[0]?.version,
+      },
+      { category: "Workforce", amount: "10000000", baseline: "9000000", version: 2 },
+      "budget baseline remains the initial entered amount after label/amount editing",
+    );
+    const lifecycle = await adminA.request(`/api/v1/projects/${project.id}/lifecycle`, {
+      method: "POST",
+      body: JSON.stringify({ expectedVersion: 1, action: "ARCHIVE", reason: "M1b verification" }),
+    });
+    assert.equal(lifecycle.status, 201, "project archive records a reason");
+    assert.equal(
+      (await adminA.request("/api/v1/projects")).status,
+      200,
+      "active project list stays available",
+    );
+    const activeProjectList = (await (await adminA.request("/api/v1/projects")).json()) as {
+      items: Array<{ id: string }>;
+    };
+    assert.equal(
+      activeProjectList.items.some((row) => row.id === project.id),
+      false,
+      "archived projects are omitted from the default list",
+    );
+    const reopen = await adminA.request(`/api/v1/projects/${project.id}/lifecycle`, {
+      method: "POST",
+      body: JSON.stringify({ expectedVersion: 2, action: "REOPEN", reason: "M1b reopen check" }),
+    });
+    assert.equal(reopen.status, 201, "project can be reopened with a reason");
+    const rearchive = await adminA.request(`/api/v1/projects/${project.id}/lifecycle`, {
+      method: "POST",
+      body: JSON.stringify({ expectedVersion: 3, action: "ARCHIVE", reason: "M1b final archive" }),
+    });
+    assert.equal(rearchive.status, 201);
+    const nextOwnerResponse = await adminA.request("/api/v1/contacts", {
+      method: "POST",
+      body: JSON.stringify({
+        displayName: "M1b verification next owner",
+        phone: null,
+        isWorker: false,
+        isSupplier: false,
+        isOwner: true,
+      }),
+    });
+    assert.equal(
+      nextOwnerResponse.status,
+      201,
+      "a second active owner is available for reassignment",
+    );
+    const nextOwner = (await nextOwnerResponse.json()) as { id: string };
+    const archivedProjectBeforeOwnerUpdate = (await (
+      await adminA.request(`/api/v1/projects/${project.id}`)
+    ).json()) as {
+      id: string;
+      version: number;
+      lifecycle: string;
+      ownerContactId: string | null;
+    };
+    assert.equal(archivedProjectBeforeOwnerUpdate.lifecycle, "ARCHIVED");
+    const changedOwnerPayload = {
+      name: "M1b verification project",
+      ownerContactId: nextOwner.id,
+      startsOn: "2026-10-01",
+      endsOn: "2026-12-31",
+      contractInitialToman: "120000000",
+    };
+    const archivedOwnerAssignment = await adminA.request(`/api/v1/projects/${project.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...changedOwnerPayload,
+        expectedVersion: archivedProjectBeforeOwnerUpdate.version,
+      }),
+    });
+    assert.equal(
+      archivedOwnerAssignment.status,
+      409,
+      "REST project updates cannot assign a new owner to an archived project",
+    );
+    const archivedQueuedOwnerAssignment = await submitDirectoryCommand(adminA, {
+      commandId: randomUUID(),
+      entityId: project.id,
+      expectedVersion: archivedProjectBeforeOwnerUpdate.version,
+      kind: "PROJECT_UPDATE",
+      payload: changedOwnerPayload,
+    });
+    assert.equal(
+      archivedQueuedOwnerAssignment.status,
+      409,
+      "queued project updates cannot assign a new owner to an archived project",
+    );
+    const archivedProjectAfterOwnerUpdate = (await (
+      await adminA.request(`/api/v1/projects/${project.id}`)
+    ).json()) as typeof archivedProjectBeforeOwnerUpdate;
+    assert.equal(
+      archivedProjectAfterOwnerUpdate.ownerContactId,
+      owner.id,
+      "rejected owner assignments preserve the existing project owner link",
+    );
+    const reopenAfterOwnerRejection = await adminA.request(
+      `/api/v1/projects/${project.id}/lifecycle`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          expectedVersion: archivedProjectAfterOwnerUpdate.version,
+          action: "REOPEN",
+          reason: "M1b reopen after rejected owner update",
+        }),
+      },
+    );
+    assert.equal(reopenAfterOwnerRejection.status, 201, "archived projects remain reopenable");
+    const reopenedProject = (await (
+      await adminA.request(`/api/v1/projects/${project.id}`)
+    ).json()) as typeof archivedProjectBeforeOwnerUpdate;
+    assert.equal(reopenedProject.lifecycle, "ACTIVE");
+    const finalArchive = await adminA.request(`/api/v1/projects/${project.id}/lifecycle`, {
+      method: "POST",
+      body: JSON.stringify({
+        expectedVersion: reopenedProject.version,
+        action: "ARCHIVE",
+        reason: "M1b final assignment verification",
+      }),
+    });
+    assert.equal(finalArchive.status, 201);
+    assert.equal(
+      (
+        await adminA.request("/api/v1/engagements", {
+          method: "POST",
+          body: JSON.stringify({ ...engagement, startsOn: "2027-01-01", endsOn: null }),
+        })
+      ).status,
+      409,
+      "archived projects reject new worker assignments",
+    );
+    assert.equal(
+      (
+        await adminA.request(`/api/v1/engagements/${assigned.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...engagement, expectedVersion: assigned.version }),
+        })
+      ).status,
+      409,
+      "archived projects reject assignment changes",
+    );
+    const archivedProjectCreate = await submitDirectoryCommand(adminA, {
+      commandId: randomUUID(),
+      entityId: randomUUID(),
+      expectedVersion: 0,
+      kind: "ENGAGEMENT_CREATE",
+      payload: { ...engagement, startsOn: "2027-01-01", endsOn: null },
+    });
+    assert.equal(
+      archivedProjectCreate.status,
+      409,
+      "queued creates cannot assign to archived projects",
+    );
+    const archivedProjectUpdate = await submitDirectoryCommand(adminA, {
+      commandId: randomUUID(),
+      entityId: assigned.id,
+      expectedVersion: assigned.version,
+      kind: "ENGAGEMENT_UPDATE",
+      payload: engagement,
+    });
+    assert.equal(
+      archivedProjectUpdate.status,
+      409,
+      "queued edits cannot assign to archived projects",
+    );
+    const bootstrap = await adminA.request("/api/v1/sync/bootstrap?limit=1");
+    assert.equal(bootstrap.status, 200);
+    let bootstrapBody = (await bootstrap.json()) as {
+      snapshotId: string;
+      cursor: string;
+      items: Array<{ entityType: string; entity: { id: string } }>;
+      nextCursor: string | null;
+    };
+    const bootstrapSnapshotId = bootstrapBody.snapshotId;
+    const bootstrapRevision = bootstrapBody.cursor;
+    const snapshotEntities = [...bootstrapBody.items];
+    assert.equal(snapshotEntities.length, 1, "bootstrap page honors its bounded row limit");
+    const afterSnapshotProjectResponse = await adminA.request("/api/v1/projects", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "M1b after-snapshot project",
+        ownerContactId: null,
+        startsOn: null,
+        endsOn: null,
+        contractInitialToman: "0",
+      }),
+    });
+    assert.equal(afterSnapshotProjectResponse.status, 201);
+    const afterSnapshotProject = (await afterSnapshotProjectResponse.json()) as { id: string };
+    const firstProjectPage = (await (await adminA.request("/api/v1/projects?limit=1")).json()) as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    assert.equal(firstProjectPage.items.length, 1);
+    assert(firstProjectPage.nextCursor, "project list supplies a bounded next-page cursor");
+    const secondProjectPage = (await (
+      await adminA.request(
+        `/api/v1/projects?limit=1&cursor=${encodeURIComponent(firstProjectPage.nextCursor)}`,
+      )
+    ).json()) as { items: Array<{ id: string }>; nextCursor: string | null };
+    assert.equal(secondProjectPage.items.length, 1);
+    assert.notEqual(firstProjectPage.items[0]?.id, secondProjectPage.items[0]?.id);
+    assert.equal((await adminA.request("/api/v1/projects?limit=0")).status, 400);
+    while (bootstrapBody.nextCursor) {
+      const nextPage = await adminA.request(
+        `/api/v1/sync/bootstrap?snapshotId=${encodeURIComponent(bootstrapSnapshotId)}&after=${encodeURIComponent(bootstrapBody.nextCursor)}&limit=1`,
+      );
+      assert.equal(nextPage.status, 200);
+      bootstrapBody = (await nextPage.json()) as typeof bootstrapBody;
+      assert.equal(bootstrapBody.snapshotId, bootstrapSnapshotId);
+      assert.equal(bootstrapBody.cursor, bootstrapRevision);
+      snapshotEntities.push(...bootstrapBody.items);
+    }
+    assert.equal(
+      snapshotEntities.some((row) => row.entity.id === afterSnapshotProject.id),
+      false,
+      "all pages retain the original repeatable-read snapshot across a later commit",
+    );
+    assert.equal(
+      new Set(snapshotEntities.map((row) => `${row.entityType}:${row.entity.id}`)).size,
+      snapshotEntities.length,
+      "bootstrap pagination returns each record once",
+    );
+    assert(
+      snapshotEntities.some((row) => row.entityType === "PROJECT" && row.entity.id === project.id),
+      "consistent bootstrap pages contain project rows from one snapshot",
+    );
+    const recoveredChanges = await adminA.request(
+      `/api/v1/sync/changes?cursor=${encodeURIComponent(bootstrapRevision)}&limit=200`,
+    );
+    const recoveredBody = (await recoveredChanges.json()) as {
+      changes: Array<{ entityId: string }>;
+      highWatermark: string;
+    };
+    assert(
+      recoveredBody.changes.some((change) => change.entityId === afterSnapshotProject.id),
+      "a commit after bootstrap is recovered from its cursor",
+    );
+    const changes = await adminA.request(`/api/v1/sync/changes?cursor=0&limit=200`);
+    const changesBody = (await changes.json()) as { changes: Array<{ entityId: string }> };
+    assert(
+      changesBody.changes.some((change) => change.entityId === project.id),
+      "change feed includes committed project changes",
+    );
+    const cursorDbClient = postgres(databaseUrl, { max: 1 });
+    const cursorDb = drizzle(cursorDbClient, { schema });
+    const [cursorState] = await cursorDb
+      .select()
+      .from(syncRevision)
+      .where(eq(syncRevision.singleton, 1));
+    assert(cursorState, "sync revision state exists for change-feed retention");
+    try {
+      await cursorDb
+        .update(syncRevision)
+        .set({ minimumCursor: Number(bootstrapRevision) })
+        .where(eq(syncRevision.singleton, 1));
+      const expired = await adminA.request("/api/v1/sync/changes?cursor=0&limit=10");
+      assert.equal(expired.status, 409, "a cursor older than retained history requests recovery");
+      assert.deepEqual(await expired.json(), {
+        code: "CURSOR_EXPIRED",
+        message: "The directory cursor is older than the retained change feed",
+        resetRequired: true,
+      });
+    } finally {
+      await cursorDb
+        .update(syncRevision)
+        .set({ minimumCursor: cursorState.minimumCursor })
+        .where(eq(syncRevision.singleton, 1));
+      await cursorDbClient.end({ timeout: 5 });
+    }
+    const rowsForProject = await adminA.request(`/api/v1/projects/${project.id}`);
+    const projectDetail = (await rowsForProject.json()) as {
+      engagements: Array<{ workerId: string }>;
+    };
+    assert.equal(projectDetail.engagements.length, 7, "project detail retains assignment history");
+    const contactArchive = await adminA.request(`/api/v1/contacts/${worker.id}/lifecycle`, {
+      method: "POST",
+      body: JSON.stringify({
+        expectedVersion: 1,
+        action: "ARCHIVE",
+        reason: "M1b retained history",
+      }),
+    });
+    assert.equal(contactArchive.status, 201, "worker contact archive records a reason");
+    assert.equal(
+      (
+        await adminA.request("/api/v1/engagements", {
+          method: "POST",
+          body: JSON.stringify({
+            ...engagement,
+            projectId: otherProject.id,
+            startsOn: "2027-01-01",
+            endsOn: null,
+          }),
+        })
+      ).status,
+      409,
+      "archived contacts cannot receive new project assignments",
+    );
+    assert.equal(
+      (
+        await adminA.request(`/api/v1/engagements/${otherAssignment.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            ...engagement,
+            projectId: otherProject.id,
+            expectedVersion: otherAssignment.version,
+          }),
+        })
+      ).status,
+      409,
+      "archived contacts cannot update project assignments",
+    );
+    const archivedWorkerCreate = await submitDirectoryCommand(adminA, {
+      commandId: randomUUID(),
+      entityId: randomUUID(),
+      expectedVersion: 0,
+      kind: "ENGAGEMENT_CREATE",
+      payload: { ...engagement, projectId: otherProject.id, startsOn: "2027-01-01", endsOn: null },
+    });
+    assert.equal(
+      archivedWorkerCreate.status,
+      409,
+      "queued creates cannot assign archived contacts",
+    );
+    const archivedWorkerUpdate = await submitDirectoryCommand(adminA, {
+      commandId: randomUUID(),
+      entityId: otherAssignment.id,
+      expectedVersion: otherAssignment.version,
+      kind: "ENGAGEMENT_UPDATE",
+      payload: { ...engagement, projectId: otherProject.id },
+    });
+    assert.equal(archivedWorkerUpdate.status, 409, "queued edits cannot assign archived contacts");
+    const retainedProject = (await (
+      await adminA.request(`/api/v1/projects/${project.id}`)
+    ).json()) as { engagements: Array<{ workerId: string }> };
+    assert(
+      retainedProject.engagements.some((row) => row.workerId === worker.id),
+      "archiving a worker preserves existing assignment history",
+    );
+    const ownerArchive = await adminA.request(`/api/v1/contacts/${owner.id}/lifecycle`, {
+      method: "POST",
+      body: JSON.stringify({
+        expectedVersion: owner.version,
+        action: "ARCHIVE",
+        reason: "M1b owner restriction",
+      }),
+    });
+    assert.equal(ownerArchive.status, 201, "owner contact can be archived with a reason");
+    const archivedOwnerProject = {
+      name: "M1b project with archived owner",
+      ownerContactId: owner.id,
+      startsOn: null,
+      endsOn: null,
+      contractInitialToman: "0",
+    };
+    assert.equal(
+      (
+        await adminA.request("/api/v1/projects", {
+          method: "POST",
+          body: JSON.stringify(archivedOwnerProject),
+        })
+      ).status,
+      409,
+      "archived owner contacts cannot be assigned to new projects",
+    );
+    assert.equal(
+      (
+        await adminA.request(`/api/v1/projects/${otherProject.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...archivedOwnerProject, expectedVersion: otherProject.version }),
+        })
+      ).status,
+      409,
+      "archived owner contacts cannot be assigned during project edits",
+    );
+    const archivedOwnerCreate = await submitDirectoryCommand(adminA, {
+      commandId: randomUUID(),
+      entityId: randomUUID(),
+      expectedVersion: 0,
+      kind: "PROJECT_CREATE",
+      payload: archivedOwnerProject,
+    });
+    assert.equal(
+      archivedOwnerCreate.status,
+      409,
+      "queued project creates cannot assign archived owners",
+    );
+    const archivedOwnerUpdate = await submitDirectoryCommand(adminA, {
+      commandId: randomUUID(),
+      entityId: otherProject.id,
+      expectedVersion: otherProject.version,
+      kind: "PROJECT_UPDATE",
+      payload: archivedOwnerProject,
+    });
+    assert.equal(
+      archivedOwnerUpdate.status,
+      409,
+      "queued project edits cannot assign archived owners",
+    );
+    const businessFixture = postgres(databaseUrl, { max: 1 });
+    try {
+      const businessDb = drizzle(businessFixture, { schema });
+      const [audit] = await businessDb
+        .select()
+        .from(businessAudit)
+        .where(eq(businessAudit.entityId, project.id))
+        .limit(1);
+      assert.equal(
+        audit?.actorUserId,
+        normalA.user.id,
+        "business audit actor comes from the authenticated session",
+      );
+    } finally {
+      await businessFixture.end({ timeout: 5 });
+    }
+
+    const directoryCommandId = randomUUID();
+    const directoryEntityId = randomUUID();
+    const directoryCommand = {
+      commandId: directoryCommandId,
+      entityId: directoryEntityId,
+      expectedVersion: 0,
+      kind: "CONTACT_CREATE",
+      payload: {
+        displayName: "M1b sync receipt contact",
+        phone: null,
+        isWorker: false,
+        isSupplier: true,
+        isOwner: false,
+        createdBy: fixtureId,
+      },
+    };
+    const commandResponse = await adminA.request("/api/v1/sync/commands", {
+      method: "POST",
+      body: JSON.stringify([directoryCommand]),
+    });
+    assert.equal(commandResponse.status, 201);
+    const commandBody = (await commandResponse.json()) as {
+      results: Array<{ ok: boolean; result: { replayed: boolean; entity: { id: string } } }>;
+    };
+    assert.equal(
+      commandBody.results[0]?.ok,
+      true,
+      "authenticated offline directory command applies",
+    );
+    assert.equal(commandBody.results[0]?.result.entity.id, directoryEntityId);
+    assert.equal(commandBody.results[0]?.result.replayed, false);
+    const reorderedCommand = {
+      payload: {
+        isOwner: false,
+        isSupplier: true,
+        isWorker: false,
+        phone: null,
+        displayName: "M1b sync receipt contact",
+        createdBy: fixtureId,
+      },
+      kind: "CONTACT_CREATE",
+      expectedVersion: 0,
+      entityId: directoryEntityId,
+      commandId: directoryCommandId,
+    };
+    const directoryRetry = await adminA.request("/api/v1/sync/commands", {
+      method: "POST",
+      body: JSON.stringify([reorderedCommand]),
+    });
+    const retryBody = (await directoryRetry.json()) as {
+      results: Array<{ ok: boolean; result: { replayed: boolean; entity: { id: string } } }>;
+    };
+    assert.equal(retryBody.results[0]?.ok, true);
+    assert.equal(
+      retryBody.results[0]?.result.replayed,
+      true,
+      "immutable retry returns its saved result",
+    );
+    assert.equal(retryBody.results[0]?.result.entity.id, directoryEntityId);
+    const changedDirectoryRetry = await adminA.request("/api/v1/sync/commands", {
+      method: "POST",
+      body: JSON.stringify([
+        { ...directoryCommand, payload: { ...directoryCommand.payload, displayName: "Changed" } },
+      ]),
+    });
+    const changedBody = (await changedDirectoryRetry.json()) as {
+      results: Array<{ ok: boolean; status: number }>;
+    };
+    assert.equal(
+      changedBody.results[0]?.status,
+      409,
+      "a changed body cannot reuse a directory command ID",
+    );
+    const commandAuditClient = postgres(databaseUrl, { max: 1 });
+    try {
+      const commandAuditDb = drizzle(commandAuditClient, { schema });
+      const [commandAudit] = await commandAuditDb
+        .select()
+        .from(businessAudit)
+        .where(eq(businessAudit.entityId, directoryEntityId))
+        .limit(1);
+      assert.equal(commandAudit?.actorUserId, normalA.user.id, "command actor is server-derived");
+    } finally {
+      await commandAuditClient.end({ timeout: 5 });
+    }
+
     const createdDraftA = await adminA.request("/api/v1/drafts", {
       method: "POST",
       body: JSON.stringify(commandA),
@@ -329,6 +1070,28 @@ async function main(): Promise<void> {
       204,
     );
     const normalB = await adminB.login(createdB.admin.username, newPasswordB);
+    assert.equal(
+      (await adminB.request(`/api/v1/projects/${project.id}`)).status,
+      200,
+      "company directory data is shared across authenticated admin accounts",
+    );
+    const sameUserScopedCommand = await adminB.request("/api/v1/sync/commands", {
+      method: "POST",
+      body: JSON.stringify([
+        {
+          ...directoryCommand,
+          entityId: randomUUID(),
+        },
+      ]),
+    });
+    const sameCommandBody = (await sameUserScopedCommand.json()) as {
+      results: Array<{ ok: boolean; result?: { replayed: boolean } }>;
+    };
+    assert.equal(
+      sameCommandBody.results[0]?.result?.replayed,
+      false,
+      "directory command receipts are scoped to the authenticated account",
+    );
     const staleTab = makeClient(base, origin);
     await staleTab.bootstrapCsrf();
     const staleSession = await staleTab.login(createdA.admin.username, newPasswordA);
@@ -614,7 +1377,7 @@ async function main(): Promise<void> {
     }
 
     process.stdout.write(
-      "API M1a verification passed: direct auth, first-login gate, account lifecycle, refresh replay, live disable, author-scoped drafts/receipts, origin/CSRF and throttling.\n",
+      "API M1a/M1b verification passed: identity and account lifecycle, private note receipts, shared project/contact/engagement APIs, archive and date rules, server-derived audit, immutable directory retries, bootstrap recovery and account-scoped receipts.\n",
     );
     verificationSucceeded = true;
   } finally {
@@ -624,6 +1387,20 @@ async function main(): Promise<void> {
       const db = drizzle(cleanup, { schema });
       const ids = fixture.map((entry) => entry.id);
       const removed = await db.transaction(async (tx) => {
+        const fixtureSessions = await tx
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(inArray(sessions.userId, ids));
+        const sessionIds = fixtureSessions.map((session) => session.id);
+        await tx.delete(businessAudit).where(inArray(businessAudit.actorUserId, ids));
+        if (sessionIds.length > 0)
+          await tx.delete(businessAudit).where(inArray(businessAudit.actorSessionId, sessionIds));
+        await tx.delete(syncChanges).where(inArray(syncChanges.actorUserId, ids));
+        await tx.delete(directoryReceipts).where(inArray(directoryReceipts.userId, ids));
+        await tx.delete(engagements).where(inArray(engagements.createdBy, ids));
+        await tx.delete(projectBudgets).where(inArray(projectBudgets.updatedBy, ids));
+        await tx.delete(projects).where(inArray(projects.createdBy, ids));
+        await tx.delete(contacts).where(inArray(contacts.createdBy, ids));
         await tx.delete(accountAudit).where(inArray(accountAudit.targetUserId, ids));
         await tx.delete(accountAudit).where(inArray(accountAudit.actorUserId, ids));
         const ownedDrafts = await tx
@@ -634,11 +1411,6 @@ async function main(): Promise<void> {
         if (draftIds.length > 0)
           await tx.delete(noteDrafts).where(inArray(noteDrafts.id, draftIds));
         await tx.delete(authenticatedReceipts).where(inArray(authenticatedReceipts.userId, ids));
-        const fixtureSessions = await tx
-          .select({ id: sessions.id })
-          .from(sessions)
-          .where(inArray(sessions.userId, ids));
-        const sessionIds = fixtureSessions.map((session) => session.id);
         if (sessionIds.length > 0) {
           await tx.delete(refreshTokens).where(inArray(refreshTokens.sessionId, sessionIds));
           await tx.delete(sessions).where(inArray(sessions.id, sessionIds));
@@ -660,6 +1432,24 @@ async function main(): Promise<void> {
   }
   if (cleanupInvariantFailed)
     throw new Error("API verification passed but its fixture records were not fully removed");
+}
+
+async function submitDirectoryCommand(
+  client: ReturnType<typeof makeClient>,
+  command: Record<string, unknown>,
+) {
+  const response = await client.request("/api/v1/sync/commands", {
+    method: "POST",
+    body: JSON.stringify([command]),
+  });
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as {
+    results: Array<{ ok: boolean; status?: number; error?: unknown }>;
+  };
+  const result = body.results[0];
+  assert(result, "queued directory command returns a result");
+  assert.equal(result.ok, false, "invalid archived assignment is rejected");
+  return result;
 }
 
 function makeClient(base: string, origin: string) {

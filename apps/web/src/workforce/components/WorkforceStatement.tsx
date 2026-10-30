@@ -32,7 +32,9 @@ export function WorkforceStatement(props: StatementProps) {
         projects={props.projects}
         onFilter={props.onFilter}
       />
-      {props.report && <WorkforceTotalsSummary totals={props.report.totals} />}
+      {props.report && (
+        <WorkforceTotalsSummary totals={props.report.totals} balances={props.report.balances} />
+      )}
       {props.error && (
         <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
           {props.error}

@@ -75,8 +75,17 @@ Deliver the workforce financial slice on the updated M1b base: six earning modes
 - `pnpm.cmd typecheck` and `pnpm.cmd lint` pass after the final UI component split. Changed TypeScript/TSX and Markdown files pass targeted Prettier formatting.
 - `pnpm.cmd verify:database`, `pnpm.cmd verify:bootstrap`, `pnpm.cmd build`, and `pnpm.cmd storage:verify` passed on this branch. The web build reports its existing large-chunk warning (>500 kB).
 - `pnpm.cmd verify:api` passes LAB01–04, exact decimal snapshots and 1,300,000 balance reconciliation, multi-project separation, changed default-rate history, duplicate and competing finalization, lost-reply replay, reversal audit/idempotency and account isolation.
-- `pnpm.cmd verify:browser` passes all 12 M0/M1b/M2 tests. The M2 360 px flow saves and edits offline, reloads the draft, replays a committed-but-lost reply with the same command, explicitly finalizes online, and verifies the posted statement without horizontal overflow.
+- Before the focused PR #5 correction pass, `pnpm.cmd verify:browser` passed all 12 M0/M1b/M2 tests. The M2 360 px flow saves and edits offline, reloads the draft, replays a committed-but-lost reply with the same command, explicitly finalizes online, and verifies the posted statement without horizontal overflow.
 - Full `pnpm.cmd format:check` remains blocked only by the pre-existing `pnpm-workspace.yaml` permission edit; all M2-owned files pass the targeted formatter check. That file remains unchanged and excluded from the M2 PR.
 - Screenshots: [offline draft](screenshots/m2-mobile-offline-workforce-draft.png) and [worker statement](screenshots/m2-mobile-worker-statement.png).
 - Evidence uses local synthetic PostgreSQL and desktop Chrome at a 360 px viewport. No actual-device, preview, production, deployment or merge verification is claimed.
 - Draft PR target: `main`; stop at draft state.
+
+## PR #5 focused correctness follow-up — 30 October 2026
+
+- Workforce upload retries reread the latest local draft in the transaction and update retry status only when the failed command still matches its edit revision. A browser regression holds an upload, edits the draft, fails the request, reloads, and confirms the newer data and revision survive.
+- Reversal records are rejected as reversal targets. The API regression verifies a reversal-of-reversal request conflicts and creates no nested inverse.
+- Date-filtered statements return the all-time opening balance alongside period totals and the computed closing balance. API coverage verifies a 1,000,000 opening balance less a 200,000 period payment closes at 800,000; the 360 px browser flow checks the opening and closing balance cards render.
+- Finalization locks and rechecks the worker, active project, and date/type-matching active engagement. Regressions cover a project archived after draft save, an engagement type changed after draft save, and a default-rate change that leaves the captured quantity/rate/amount intact.
+- Follow-up checks passed: `pnpm.cmd typecheck`, `pnpm.cmd lint`, `pnpm.cmd build`, `pnpm.cmd verify:api`, and `pnpm.cmd verify:browser -- tests/m2/workforce.spec.ts` (2 M2 browser tests). Targeted Prettier check and `git diff --check` passed.
+- The follow-up still uses local synthetic PostgreSQL and desktop Chrome. No device, preview, production, merge, or deployment verification is claimed.

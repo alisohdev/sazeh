@@ -17,7 +17,7 @@ import {
   type WorkforceReportFilter,
   type WorkforceReverseCommand,
 } from "@sazeh/contracts";
-import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { ZodError } from "zod";
 import { DATABASE, type Database } from "../db/database.module.js";
 import {
@@ -121,8 +121,9 @@ export class WorkforceService {
       if (principal.kind !== "workspace") throw new ForbiddenException();
       const current = await this.lockRecord(tx, command.recordId);
       this.expectDraftVersion(current, command.expectedVersion);
-      await this.requireProject(tx, current.projectId);
-      await this.requireWorker(tx, current.workerId);
+      await this.requireWorker(tx, current.workerId, true);
+      await this.requireActiveProject(tx, current.projectId);
+      if (current.kind === "EARNING") await this.requireEligibleEngagement(tx, current);
       const [record] = await tx
         .update(workforceRecords)
         .set({
@@ -151,6 +152,11 @@ export class WorkforceService {
           message: "This workforce record changed",
           currentVersion: current.version,
           current,
+        });
+      if (current.reversalOfId)
+        throw new ConflictException({
+          code: "REVERSAL_NOT_REVERSIBLE",
+          message: "A reversal record cannot be reversed",
         });
       if (current.status !== "FINALIZED")
         throw new ConflictException({
@@ -203,9 +209,21 @@ export class WorkforceService {
     const rows = await this.loadRecords(filter);
     const finalized = rows.filter((row) => row.status === "FINALIZED" || row.status === "REVERSED");
     const drafts = rows.filter((row) => row.status === "DRAFT");
+    const openingRows = filter.from ? await this.loadRecords(filter, filter.from) : [];
+    const openingFinalized = openingRows.filter(
+      (row) => row.status === "FINALIZED" || row.status === "REVERSED",
+    );
+    const openingBalanceToman = totalsOf(openingFinalized).remainingBalanceToman;
+    const totals = totalsOf(finalized);
     return {
       filters: filter,
-      totals: totalsOf(finalized),
+      totals,
+      balances: {
+        openingBalanceToman,
+        closingBalanceToman: (
+          BigInt(openingBalanceToman) + BigInt(totals.remainingBalanceToman)
+        ).toString(),
+      },
       pending: {
         count: drafts.length,
         amountToman: sum(drafts.map((row) => BigInt(row.amountToman))).toString(),
@@ -245,17 +263,21 @@ export class WorkforceService {
     }));
   }
 
-  private async loadRecords(filter: {
-    workerId?: string | undefined;
-    projectId?: string | undefined;
-    from?: string | undefined;
-    to?: string | undefined;
-  }) {
+  private async loadRecords(
+    filter: {
+      workerId?: string | undefined;
+      projectId?: string | undefined;
+      from?: string | undefined;
+      to?: string | undefined;
+    },
+    before?: string,
+  ) {
     const conditions = [
       filter.workerId ? eq(workforceRecords.workerId, filter.workerId) : undefined,
       filter.projectId ? eq(workforceRecords.projectId, filter.projectId) : undefined,
-      filter.from ? gte(workforceRecords.businessDate, filter.from) : undefined,
-      filter.to ? lte(workforceRecords.businessDate, filter.to) : undefined,
+      before ? lt(workforceRecords.businessDate, before) : undefined,
+      !before && filter.from ? gte(workforceRecords.businessDate, filter.from) : undefined,
+      !before && filter.to ? lte(workforceRecords.businessDate, filter.to) : undefined,
     ].filter(Boolean);
     const records = await this.db
       .select()
@@ -317,11 +339,57 @@ export class WorkforceService {
     return project;
   }
 
-  private async requireWorker(tx: Tx, id: string) {
-    const [worker] = await tx.select().from(contacts).where(eq(contacts.id, id)).limit(1);
+  private async requireActiveProject(tx: Tx, id: string) {
+    const [project] = await tx
+      .select()
+      .from(projects)
+      .where(eq(projects.id, id))
+      .limit(1)
+      .for("update");
+    if (!project)
+      throw new NotFoundException({ code: "PROJECT_NOT_FOUND", message: "Project was not found" });
+    if (project.lifecycle !== "ACTIVE")
+      throw new ConflictException({
+        code: "PROJECT_ARCHIVED",
+        message: "Archived projects cannot receive finalized workforce records",
+      });
+    return project;
+  }
+
+  private async requireWorker(tx: Tx, id: string, lock = false) {
+    const query = tx.select().from(contacts).where(eq(contacts.id, id)).limit(1);
+    const [worker] = lock ? await query.for("update") : await query;
     if (!worker || !worker.isWorker)
       throw new NotFoundException({ code: "WORKER_NOT_FOUND", message: "Worker was not found" });
+    if (lock && worker.archived)
+      throw new ConflictException({
+        code: "WORKER_UNAVAILABLE",
+        message: "Archived workers cannot receive finalized workforce records",
+      });
     return worker;
+  }
+
+  private async requireEligibleEngagement(tx: Tx, record: WorkforceRow) {
+    const [assignment] = await tx
+      .select()
+      .from(engagements)
+      .where(
+        and(
+          eq(engagements.projectId, record.projectId),
+          eq(engagements.workerId, record.workerId),
+          eq(engagements.type, record.engagementType!),
+          eq(engagements.archived, false),
+          lte(engagements.startsOn, record.businessDate),
+          sql`(${engagements.endsOn} IS NULL OR ${engagements.endsOn} >= ${record.businessDate})`,
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!assignment)
+      throw new ConflictException({
+        code: "ENGAGEMENT_REQUIRED",
+        message: "An active matching worker-project engagement is required for this date",
+      });
   }
 
   private async lockRecord(tx: Tx, id: string) {

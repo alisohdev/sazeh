@@ -573,6 +573,66 @@ async function main(): Promise<void> {
       },
       "LAB01: 3,000,000 - 200,000 - 1,500,000 = 1,300,000",
     );
+    const openingEarning = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: project.id,
+        workerId: worker.id,
+        businessDate: "2026-10-27",
+        engagementType: "DAILY",
+        quantity: "1",
+        rateToman: "1000000",
+        description: "Opening balance fixture",
+      },
+    });
+    await finalizeWorkforce(adminA, openingEarning.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    });
+    const periodPayment = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "WORKER_PAYMENT",
+        paymentKind: "PAYMENT",
+        projectId: project.id,
+        workerId: worker.id,
+        businessDate: "2026-10-28",
+        amountToman: "200000",
+        description: "Period balance fixture",
+      },
+    });
+    await finalizeWorkforce(adminA, periodPayment.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    });
+    const periodStatement = await workforceStatement(
+      adminA,
+      worker.id,
+      project.id,
+      "2026-10-28",
+      "2026-10-28",
+    );
+    assert.deepEqual(
+      periodStatement.totals,
+      {
+        grossEarningsToman: "0",
+        deductionsToman: "0",
+        netEarningsToman: "0",
+        paymentsToman: "200000",
+        remainingBalanceToman: "-200000",
+      },
+      "date-filtered totals report only the selected period activity",
+    );
+    assert.deepEqual(
+      periodStatement.balances,
+      { openingBalanceToman: "1000000", closingBalanceToman: "800000" },
+      "date-filtered statement carries prior balance into the period closing balance",
+    );
     const projectBEarning = await createWorkforceDraft(adminA, {
       commandId: randomUUID(),
       recordId: randomUUID(),
@@ -702,6 +762,174 @@ async function main(): Promise<void> {
       "LAB04: monthly partial period uses only the manager-approved amount",
     );
 
+    const eligibilityWorkerResponse = await adminA.request("/api/v1/contacts", {
+      method: "POST",
+      body: JSON.stringify({
+        displayName: "M2 finalization eligibility worker",
+        phone: null,
+        isWorker: true,
+        isSupplier: false,
+        isOwner: false,
+      }),
+    });
+    assert.equal(eligibilityWorkerResponse.status, 201);
+    const eligibilityWorker = (await eligibilityWorkerResponse.json()) as { id: string };
+    const eligibilityProjectResponse = await adminA.request("/api/v1/projects", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "M2 finalization eligibility project",
+        ownerContactId: null,
+        startsOn: "2026-10-01",
+        endsOn: "2026-12-31",
+        contractInitialToman: "0",
+      }),
+    });
+    assert.equal(eligibilityProjectResponse.status, 201);
+    const eligibilityProject = (await eligibilityProjectResponse.json()) as {
+      id: string;
+      version: number;
+    };
+    const eligibilityEngagementResponse = await adminA.request("/api/v1/engagements", {
+      method: "POST",
+      body: JSON.stringify({
+        workerId: eligibilityWorker.id,
+        projectId: eligibilityProject.id,
+        type: "DAILY",
+        defaultRateToman: "1000000",
+        startsOn: "2026-10-01",
+        endsOn: "2026-12-31",
+      }),
+    });
+    assert.equal(eligibilityEngagementResponse.status, 201);
+    const eligibilityEngagement = (await eligibilityEngagementResponse.json()) as {
+      id: string;
+      version: number;
+    };
+    const capturedEarning = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: eligibilityProject.id,
+        workerId: eligibilityWorker.id,
+        businessDate: "2026-10-27",
+        engagementType: "DAILY",
+        quantity: "2",
+        rateToman: "1000000",
+        description: "Captured earning survives rate change",
+      },
+    });
+    const defaultRateChange = await adminA.request(
+      `/api/v1/engagements/${eligibilityEngagement.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          workerId: eligibilityWorker.id,
+          projectId: eligibilityProject.id,
+          type: "DAILY",
+          defaultRateToman: "1200000",
+          startsOn: "2026-10-01",
+          endsOn: "2026-12-31",
+          expectedVersion: eligibilityEngagement.version,
+        }),
+      },
+    );
+    assert.equal(defaultRateChange.status, 200);
+    const capturedFinalization = (await finalizeWorkforce(adminA, capturedEarning.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    })) as { amountToman: string; rateToman: string; quantity: string };
+    assert.deepEqual(
+      {
+        amountToman: capturedFinalization.amountToman,
+        rateToman: capturedFinalization.rateToman,
+        quantity: capturedFinalization.quantity,
+      },
+      { amountToman: "2000000", rateToman: "1000000", quantity: "2" },
+      "finalization accepts an eligible earning without repricing its captured snapshot",
+    );
+
+    const staleDailyDraft = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: eligibilityProject.id,
+        workerId: eligibilityWorker.id,
+        businessDate: "2026-10-28",
+        engagementType: "DAILY",
+        quantity: "1",
+        rateToman: "1000000",
+        description: "Draft before engagement type change",
+      },
+    });
+    const engagementTypeChange = await adminA.request(
+      `/api/v1/engagements/${eligibilityEngagement.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          workerId: eligibilityWorker.id,
+          projectId: eligibilityProject.id,
+          type: "HOURLY",
+          defaultRateToman: "1200000",
+          startsOn: "2026-10-01",
+          endsOn: "2026-12-31",
+          expectedVersion: eligibilityEngagement.version + 1,
+        }),
+      },
+    );
+    assert.equal(engagementTypeChange.status, 200);
+    const staleEngagementFinalization = await adminA.request(
+      `/api/v1/workforce/drafts/${staleDailyDraft.id}/finalize`,
+      { method: "POST", body: JSON.stringify({ commandId: randomUUID(), expectedVersion: 1 }) },
+    );
+    assert.equal(staleEngagementFinalization.status, 409);
+    assert.equal(
+      ((await staleEngagementFinalization.json()) as { code: string }).code,
+      "ENGAGEMENT_REQUIRED",
+      "finalization rejects an earning whose engagement type is no longer eligible",
+    );
+
+    const archivedProjectDraft = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: eligibilityProject.id,
+        workerId: eligibilityWorker.id,
+        businessDate: "2026-10-29",
+        engagementType: "HOURLY",
+        quantity: "1",
+        rateToman: "1200000",
+        description: "Draft before project archive",
+      },
+    });
+    const archiveBeforeFinalize = await adminA.request(
+      `/api/v1/projects/${eligibilityProject.id}/lifecycle`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          expectedVersion: eligibilityProject.version,
+          action: "ARCHIVE",
+          reason: "M2 finalization eligibility test",
+        }),
+      },
+    );
+    assert.equal(archiveBeforeFinalize.status, 201);
+    const archivedProjectFinalization = await adminA.request(
+      `/api/v1/workforce/drafts/${archivedProjectDraft.id}/finalize`,
+      { method: "POST", body: JSON.stringify({ commandId: randomUUID(), expectedVersion: 1 }) },
+    );
+    assert.equal(archivedProjectFinalization.status, 409);
+    assert.equal(
+      ((await archivedProjectFinalization.json()) as { code: string }).code,
+      "PROJECT_ARCHIVED",
+      "finalization rejects a draft after its project is archived",
+    );
+
     const concurrent = await createWorkforceDraft(adminA, {
       commandId: randomUUID(),
       recordId: randomUUID(),
@@ -776,6 +1004,34 @@ async function main(): Promise<void> {
       reversalCount.length,
       1,
       "COR01: original record remains and exactly one inverse is linked",
+    );
+    const reverseOfReversal = await adminA.request(
+      `/api/v1/workforce/records/${reversalResult.reversal.id}/reverse`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          commandId: randomUUID(),
+          expectedVersion: 1,
+          reason: "Attempt to reverse a reversal",
+        }),
+      },
+    );
+    assert.equal(reverseOfReversal.status, 409);
+    assert.equal(
+      ((await reverseOfReversal.json()) as { code: string }).code,
+      "REVERSAL_NOT_REVERSIBLE",
+      "a finalized reversal row cannot itself be reversed",
+    );
+    const nestedReversalCount = await dbRecordCount(
+      databaseUrl,
+      reversalResult.reversal.id,
+      normalA.user.id,
+      "reversalOfId",
+    );
+    assert.equal(
+      nestedReversalCount.length,
+      0,
+      "a rejected reversal cannot create a second inverse",
     );
     assert.equal(
       (await workforceStatement(adminA, worker.id, project.id, labDate, labDate)).totals
@@ -1852,6 +2108,10 @@ async function workforceStatement(
       netEarningsToman: string;
       paymentsToman: string;
       remainingBalanceToman: string;
+    };
+    balances: {
+      openingBalanceToman: string;
+      closingBalanceToman: string;
     };
     pending: { count: number; amountToman: string };
     entries: Array<{ id: string; status: string }>;

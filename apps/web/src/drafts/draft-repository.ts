@@ -1362,7 +1362,7 @@ export function openDraftWorkspace(
             await workspaceControl.pauseSync(user.id, epoch);
             return;
           }
-          await retryWorkforceCommand(store, entry, draft, owner, lease.generation);
+          await retryWorkforceCommand(store, entry, owner, lease.generation);
           continue;
         }
         if (
@@ -1423,7 +1423,7 @@ export function openDraftWorkspace(
               lease.generation,
             );
           } else {
-            await retryWorkforceCommand(store, entry, draft, owner, lease.generation);
+            await retryWorkforceCommand(store, entry, owner, lease.generation);
           }
           notify();
           continue;
@@ -1511,7 +1511,6 @@ export function openDraftWorkspace(
   async function retryWorkforceCommand(
     store: WorkspaceDatabase,
     entry: WorkforceOutbox,
-    draft: WorkforceDraft,
     owner: string,
     generation: number,
   ) {
@@ -1531,8 +1530,10 @@ export function openDraftWorkspace(
         await store.workforceOutbox.update(entry.commandId, {
           retryAt: Date.now() + Math.min(60_000, 2_000 * 2 ** Math.min(entry.attempts, 5)),
         });
+        const latest = await store.workforceDrafts.get(entry.recordId);
+        if (!latest || latest.editRevision !== entry.editRevision) return;
         await store.workforceDrafts.put({
-          ...draft,
+          ...latest,
           syncState: entry.action === "FINALIZE" ? "FINALIZE_PENDING" : "RETRY_PENDING",
           problem: "اتصال برقرار نشد؛ درخواست با همان شناسه دوباره فرستاده می‌شود.",
         });

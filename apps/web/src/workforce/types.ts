@@ -40,6 +40,10 @@ export type WorkforceTotals = {
 export type WorkforceReport = {
   filters: WorkforceFilter;
   totals: WorkforceTotals;
+  balances: {
+    openingBalanceToman: string;
+    closingBalanceToman: string;
+  };
   pending: { count: number; amountToman: string };
   entries: WorkforceServerRecord[];
 };

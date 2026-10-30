@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   char,
   check,
@@ -24,6 +25,16 @@ export const engagementType = pgEnum("engagement_type", [
   "MONTHLY",
   "FIXED_CONTRACT",
   "MANUAL",
+]);
+export const workforceRecordKind = pgEnum("workforce_record_kind", [
+  "EARNING",
+  "DEDUCTION",
+  "WORKER_PAYMENT",
+]);
+export const workforceRecordStatus = pgEnum("workforce_record_status", [
+  "DRAFT",
+  "FINALIZED",
+  "REVERSED",
 ]);
 
 export const contacts = pgTable("contacts", {
@@ -102,6 +113,100 @@ export const engagements = pgTable(
       table.endsOn,
     ),
   ],
+);
+
+export const workforceRecords = pgTable(
+  "workforce_records",
+  {
+    id: uuid("id").primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    workerId: uuid("worker_id")
+      .notNull()
+      .references(() => contacts.id),
+    kind: workforceRecordKind("kind").notNull(),
+    businessDate: char("business_date", { length: 10 }).notNull(),
+    engagementType: engagementType("engagement_type"),
+    quantity: varchar("quantity", { length: 32 }),
+    rateToman: varchar("rate_toman", { length: 24 }),
+    amountToman: varchar("amount_toman", { length: 24 }).notNull(),
+    paymentKind: varchar("payment_kind", { length: 12 }),
+    description: text("description").notNull(),
+    status: workforceRecordStatus("status").notNull().default("DRAFT"),
+    version: integer("version").notNull().default(1),
+    reversalOfId: uuid("reversal_of_id").references((): AnyPgColumn => workforceRecords.id),
+    reversalReason: text("reversal_reason"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => users.id),
+    finalizedBy: uuid("finalized_by").references(() => users.id),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("workforce_records_project_worker_date_idx").on(
+      table.projectId,
+      table.workerId,
+      table.businessDate,
+    ),
+    index("workforce_records_worker_status_date_idx").on(
+      table.workerId,
+      table.status,
+      table.businessDate,
+    ),
+    uniqueIndex("workforce_records_reversal_of_uq").on(table.reversalOfId),
+    check(
+      "workforce_records_amount_check",
+      sql`${table.amountToman} ~ '^(0|[1-9][0-9]*)$' AND ${table.amountToman} <> '0'`,
+    ),
+    check(
+      "workforce_records_quantity_check",
+      sql`${table.quantity} IS NULL OR ${table.quantity} ~ '^(0|[1-9][0-9]*)(\\.[0-9]{1,3})?$'`,
+    ),
+    check(
+      "workforce_records_rate_check",
+      sql`${table.rateToman} IS NULL OR ${table.rateToman} ~ '^(0|[1-9][0-9]*)$'`,
+    ),
+    check(
+      "workforce_records_reversal_check",
+      sql`(${table.reversalOfId} IS NULL AND ${table.reversalReason} IS NULL) OR (${table.reversalOfId} IS NOT NULL AND length(btrim(${table.reversalReason})) BETWEEN 1 AND 1000)`,
+    ),
+    check(
+      "workforce_records_description_check",
+      sql`length(btrim(${table.description})) BETWEEN 1 AND 1000`,
+    ),
+    check(
+      "workforce_records_kind_fields_check",
+      sql`(${table.kind} = 'EARNING' AND ${table.engagementType} IS NOT NULL AND ((${table.engagementType} IN ('DAILY','HOURLY','QUANTITY') AND ${table.quantity} IS NOT NULL AND ${table.rateToman} IS NOT NULL) OR (${table.engagementType} IN ('MONTHLY','FIXED_CONTRACT','MANUAL') AND ${table.quantity} IS NULL AND ${table.rateToman} IS NULL))) OR (${table.kind} <> 'EARNING' AND ${table.engagementType} IS NULL AND ${table.quantity} IS NULL AND ${table.rateToman} IS NULL)`,
+    ),
+    check(
+      "workforce_records_payment_kind_check",
+      sql`(${table.kind} = 'WORKER_PAYMENT' AND ${table.paymentKind} IN ('PAYMENT','ADVANCE')) OR (${table.kind} <> 'WORKER_PAYMENT' AND ${table.paymentKind} IS NULL)`,
+    ),
+    check(
+      "workforce_records_finalized_fields_check",
+      sql`(${table.status} = 'DRAFT' AND ${table.finalizedBy} IS NULL AND ${table.finalizedAt} IS NULL) OR (${table.status} IN ('FINALIZED','REVERSED') AND ${table.finalizedBy} IS NOT NULL AND ${table.finalizedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const workforceReceipts = pgTable(
+  "workforce_command_receipts",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    commandId: uuid("command_id").notNull(),
+    bodyHash: char("body_hash", { length: 64 }).notNull(),
+    result: jsonb("result").$type<unknown>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.commandId] })],
 );
 
 export const projectBudgets = pgTable(

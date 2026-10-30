@@ -76,6 +76,7 @@ export function WorkspaceScreen(props: AppController) {
           user={user}
           repository={repository}
           locked={locked}
+          online={online}
           onStatus={setMessage}
         />
       )}

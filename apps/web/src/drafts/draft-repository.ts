@@ -6,10 +6,18 @@ import {
   DirectoryBootstrapSchema,
   DirectoryChangesSchema,
   DirectoryCommandSchema,
+  WorkforceDraftCommandSchema,
+  WorkforceFinalizeCommandSchema,
+  WorkforceRecordInputSchema,
+  WorkforceReverseCommandSchema,
   type DraftCreateCommand,
   type DirectoryCommand,
   type DraftView,
   type User,
+  type WorkforceDraftCommand,
+  type WorkforceFinalizeCommand,
+  type WorkforceRecordInput,
+  type WorkforceReverseCommand,
 } from "@sazeh/contracts";
 import { ApiError, authClient } from "../identity/auth-client.js";
 import { workspaceControl } from "../identity/workspace-control.js";
@@ -32,9 +40,10 @@ type OutboxEntry = {
 };
 type SyncLease = { key: "sync"; owner: string; generation: number; expiresAt: number };
 type DirectoryType = "PROJECT" | "CONTACT" | "ENGAGEMENT" | "BUDGET";
+type DirectorySnapshotType = DirectoryType | "WORKFORCE_RECORD";
 type DirectoryRow = {
   id: string;
-  type: DirectoryType;
+  type: DirectorySnapshotType;
   data: Record<string, unknown>;
   version: number;
   updatedAt: string;
@@ -56,6 +65,39 @@ type DirectoryOutbox = {
   editRevision: number;
 };
 type DirectoryCursor = { key: "feed"; revision: string; lastSyncAt: string };
+type WorkforceLocalStatus =
+  | "PENDING"
+  | "SENDING"
+  | "SYNCED"
+  | "AUTH_REQUIRED"
+  | "CONFLICT"
+  | "VALIDATION_FAILED"
+  | "RETRY_PENDING"
+  | "FINALIZE_PENDING"
+  | "FINALIZED"
+  | "REVERSED";
+type WorkforceDraft = {
+  id: string;
+  data: WorkforceRecordInput;
+  version: number;
+  status: "DRAFT" | "FINALIZED" | "REVERSED";
+  syncState: WorkforceLocalStatus;
+  updatedAt: string;
+  editRevision: number;
+  problem?: string;
+  serverData?: Record<string, unknown>;
+};
+type WorkforceCommand = WorkforceDraftCommand | WorkforceFinalizeCommand | WorkforceReverseCommand;
+type WorkforceOutbox = {
+  commandId: string;
+  recordId: string;
+  action: "DRAFT" | "FINALIZE" | "REVERSE";
+  createdAt: string;
+  payload: WorkforceCommand;
+  attempts: number;
+  retryAt: number;
+  editRevision: number;
+};
 
 class WorkspaceDatabase extends Dexie {
   drafts!: EntityTable<SavedDraft, "id">;
@@ -65,6 +107,8 @@ class WorkspaceDatabase extends Dexie {
   directoryDrafts!: EntityTable<DirectoryDraft, "id">;
   directoryOutbox!: EntityTable<DirectoryOutbox, "commandId">;
   directoryCursors!: EntityTable<DirectoryCursor, "key">;
+  workforceDrafts!: EntityTable<WorkforceDraft, "id">;
+  workforceOutbox!: EntityTable<WorkforceOutbox, "commandId">;
 
   constructor(name: string) {
     super(name);
@@ -81,6 +125,17 @@ class WorkspaceDatabase extends Dexie {
       directoryDrafts: "&id,type,syncState,updatedAt",
       directoryOutbox: "&commandId,entityId,createdAt,retryAt",
       directoryCursors: "&key",
+    });
+    this.version(3).stores({
+      drafts: "&id,savedAt,syncState",
+      outbox: "&commandId,entityId,createdAt,retryAt",
+      leases: "&key",
+      directorySnapshots: "&id,type,updatedAt",
+      directoryDrafts: "&id,type,syncState,updatedAt",
+      directoryOutbox: "&commandId,entityId,createdAt,retryAt",
+      directoryCursors: "&key",
+      workforceDrafts: "&id,updatedAt,syncState,status",
+      workforceOutbox: "&commandId,recordId,action,createdAt,retryAt",
     });
   }
 }
@@ -148,6 +203,57 @@ export function openDraftWorkspace(
     void scheduleSyncWakeup();
   }
 
+  async function queueWorkforceAction(
+    id: string,
+    action: "FINALIZE" | "REVERSE",
+    expectedVersion: number,
+    reason?: string,
+  ): Promise<void> {
+    await withWorkspaceActivity("shared", async () => {
+      await requireCurrent();
+      const store = await db();
+      const current = await store.workforceDrafts.get(id);
+      if (!current || current.version !== expectedVersion)
+        throw new Error("The workforce record changed. Refresh it before continuing.");
+      const previous = await store.workforceOutbox.where("recordId").equals(id).toArray();
+      if (previous.length)
+        throw new Error("This record already has a pending synchronization command.");
+      if (action === "FINALIZE" && (current.status !== "DRAFT" || current.syncState !== "SYNCED"))
+        throw new Error("Only a synchronized server draft can be finalized online.");
+      if (action === "REVERSE" && current.status !== "FINALIZED")
+        throw new Error("Only a finalized workforce record can be reversed.");
+      const commandId = crypto.randomUUID();
+      const payload =
+        action === "FINALIZE"
+          ? WorkforceFinalizeCommandSchema.parse({ commandId, recordId: id, expectedVersion })
+          : WorkforceReverseCommandSchema.parse({
+              commandId,
+              recordId: id,
+              expectedVersion,
+              reason,
+            });
+      const outbox: WorkforceOutbox = {
+        commandId,
+        recordId: id,
+        action,
+        createdAt: new Date().toISOString(),
+        payload,
+        attempts: 0,
+        retryAt: 0,
+        editRevision: current.editRevision,
+      };
+      await store.transaction("rw", store.workforceDrafts, store.workforceOutbox, async () => {
+        await store.workforceOutbox.add(outbox);
+        await store.workforceDrafts.put({
+          ...current,
+          syncState: action === "FINALIZE" ? "FINALIZE_PENDING" : "PENDING",
+        });
+      });
+    });
+    notify();
+    if (navigator.onLine) void repository.syncPending();
+  }
+
   const repository = {
     userId: user.id,
     user,
@@ -171,7 +277,11 @@ export function openDraftWorkspace(
 
     async pendingCount(): Promise<number> {
       const store = await db();
-      return (await store.outbox.count()) + (await store.directoryOutbox.count());
+      return (
+        (await store.outbox.count()) +
+        (await store.directoryOutbox.count()) +
+        (await store.workforceOutbox.count())
+      );
     },
 
     async directoryItems(type?: DirectoryType): Promise<DirectoryDraft[]> {
@@ -196,6 +306,109 @@ export function openDraftWorkspace(
           String(a.data.updatedAt ?? a.updatedAt),
         ),
       );
+    },
+
+    async workforceItems(): Promise<WorkforceDraft[]> {
+      const store = await db();
+      return store.workforceDrafts.orderBy("updatedAt").reverse().toArray();
+    },
+
+    async cacheWorkforceRecords(records: Array<Record<string, unknown>>): Promise<void> {
+      const store = await db();
+      await store.transaction("rw", store.workforceDrafts, store.workforceOutbox, async () => {
+        for (const row of records) {
+          if (typeof row.id !== "string" || typeof row.version !== "number") continue;
+          const queued = await store.workforceOutbox.where("recordId").equals(row.id).count();
+          const current = await store.workforceDrafts.get(row.id);
+          if (queued || (current && current.version > row.version)) continue;
+          const data = workforceInputFromRecord(row);
+          if (!data) continue;
+          const status =
+            row.status === "FINALIZED"
+              ? "FINALIZED"
+              : row.status === "REVERSED"
+                ? "REVERSED"
+                : "DRAFT";
+          await store.workforceDrafts.put({
+            id: row.id,
+            data,
+            version: row.version,
+            status,
+            syncState: status === "DRAFT" ? "SYNCED" : status,
+            updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
+            editRevision: current?.editRevision ?? 0,
+          });
+        }
+      });
+    },
+
+    async saveWorkforce(
+      input: WorkforceRecordInput,
+      existingId?: string,
+      serverVersion = 0,
+    ): Promise<string> {
+      return withWorkspaceActivity("shared", async () => {
+        await requireCurrent();
+        const normalized = WorkforceRecordInputSchema.parse(input);
+        const store = await db();
+        const id = existingId ?? crypto.randomUUID();
+        const current = await store.workforceDrafts.get(id);
+        if (current?.status === "FINALIZED" || current?.status === "REVERSED")
+          throw new Error("Finalized workforce records cannot be edited.");
+        const previous = await store.workforceOutbox.where("recordId").equals(id).toArray();
+        const pendingDrafts = previous.filter((entry) => entry.action === "DRAFT");
+        const replaceUnsent =
+          current?.syncState === "CONFLICT" || current?.syncState === "VALIDATION_FAILED"
+            ? pendingDrafts
+            : pendingDrafts.filter((entry) => entry.attempts === 0);
+        const expectedVersion =
+          (current?.version ?? serverVersion) + pendingDrafts.length - replaceUnsent.length;
+        const editRevision = (current?.editRevision ?? 0) + 1;
+        const createdAt = new Date().toISOString();
+        const payload = WorkforceDraftCommandSchema.parse({
+          commandId: crypto.randomUUID(),
+          recordId: id,
+          expectedVersion,
+          input: normalized,
+        });
+        const draft: WorkforceDraft = {
+          id,
+          data: normalized,
+          version: current?.version ?? serverVersion,
+          status: "DRAFT",
+          syncState: "PENDING",
+          updatedAt: createdAt,
+          editRevision,
+        };
+        const outbox: WorkforceOutbox = {
+          commandId: payload.commandId,
+          recordId: id,
+          action: "DRAFT",
+          createdAt,
+          payload,
+          attempts: 0,
+          retryAt: 0,
+          editRevision,
+        };
+        await store.transaction("rw", store.workforceDrafts, store.workforceOutbox, async () => {
+          await store.workforceOutbox.bulkDelete(replaceUnsent.map((entry) => entry.commandId));
+          await store.workforceDrafts.put(draft);
+          await store.workforceOutbox.add(outbox);
+        });
+        notify();
+        if (navigator.onLine) void repository.syncPending();
+        return id;
+      });
+    },
+
+    finalizeWorkforce(id: string, expectedVersion: number) {
+      if (!navigator.onLine) throw new Error("Finalization requires an online connection.");
+      return queueWorkforceAction(id, "FINALIZE", expectedVersion);
+    },
+
+    reverseWorkforce(id: string, expectedVersion: number, reason: string) {
+      if (!navigator.onLine) throw new Error("Reversal requires an online connection.");
+      return queueWorkforceAction(id, "REVERSE", expectedVersion, reason);
     },
 
     async saveDirectory(
@@ -370,7 +583,11 @@ export function openDraftWorkspace(
           state.user?.id === user.id;
         if (!pendingThisWorkspace) await requireCurrent();
         const store = await db();
-        return operation(await store.outbox.count());
+        return operation(
+          (await store.outbox.count()) +
+            (await store.directoryOutbox.count()) +
+            (await store.workforceOutbox.count()),
+        );
       });
     },
 
@@ -384,6 +601,7 @@ export function openDraftWorkspace(
           syncRequested = false;
           await runSync();
           await runDirectorySync();
+          await runWorkforceSync();
         } while (syncRequested && !closed);
       })();
       syncFlight = run.finally(() => {
@@ -400,8 +618,13 @@ export function openDraftWorkspace(
       const store = await db();
       const commands = await store.outbox.orderBy("createdAt").toArray();
       const directoryCommands = await store.directoryOutbox.orderBy("createdAt").toArray();
-      if (commands.length === 0 && directoryCommands.length === 0) return undefined;
+      const workforceCommands = await store.workforceOutbox.orderBy("createdAt").toArray();
+      if (commands.length === 0 && directoryCommands.length === 0 && workforceCommands.length === 0)
+        return undefined;
       const drafts = await Promise.all(commands.map((entry) => store.drafts.get(entry.entityId)));
+      const workforceDrafts = await Promise.all(
+        workforceCommands.map((entry) => store.workforceDrafts.get(entry.recordId)),
+      );
       return JSON.stringify(
         {
           schemaVersion: 1,
@@ -419,6 +642,8 @@ export function openDraftWorkspace(
             payload,
           })),
           directoryCommands,
+          workforceDrafts: workforceDrafts.filter(Boolean),
+          workforceCommands,
         },
         null,
         2,
@@ -427,21 +652,21 @@ export function openDraftWorkspace(
 
     async discardPending(): Promise<void> {
       const store = await db();
-      await store.transaction(
-        "rw",
-        store.drafts,
-        store.outbox,
-        store.directoryDrafts,
-        store.directoryOutbox,
-        async () => {
-          const commands = await store.outbox.toArray();
-          await store.outbox.clear();
-          await store.drafts.bulkDelete(commands.map((entry) => entry.entityId));
-          const directoryCommands = await store.directoryOutbox.toArray();
-          await store.directoryOutbox.clear();
-          await store.directoryDrafts.bulkDelete(directoryCommands.map((entry) => entry.entityId));
-        },
-      );
+      const commands = await store.outbox.toArray();
+      await store.transaction("rw", store.drafts, store.outbox, async () => {
+        await store.outbox.clear();
+        await store.drafts.bulkDelete(commands.map((entry) => entry.entityId));
+      });
+      const directoryCommands = await store.directoryOutbox.toArray();
+      await store.transaction("rw", store.directoryDrafts, store.directoryOutbox, async () => {
+        await store.directoryOutbox.clear();
+        await store.directoryDrafts.bulkDelete(directoryCommands.map((entry) => entry.entityId));
+      });
+      const workforceCommands = await store.workforceOutbox.toArray();
+      await store.transaction("rw", store.workforceDrafts, store.workforceOutbox, async () => {
+        await store.workforceOutbox.clear();
+        await store.workforceDrafts.bulkDelete(workforceCommands.map((entry) => entry.recordId));
+      });
       notify();
     },
 
@@ -764,6 +989,7 @@ export function openDraftWorkspace(
           lease.generation,
           async () => (await canSync()) && (await ownsLease(store, owner, lease.generation)),
         );
+        notify();
       }
       const entries = await store.directoryOutbox.orderBy("createdAt").toArray();
       const priority: Record<DirectoryType, number> = {
@@ -985,6 +1211,7 @@ export function openDraftWorkspace(
             lease.generation,
             async () => (await canSync()) && (await ownsLease(store, owner, lease.generation)),
           );
+          notify();
           pageCursor = cursor.revision;
           continue;
         }
@@ -1048,6 +1275,318 @@ export function openDraftWorkspace(
     }
   }
 
+  async function runWorkforceSync(): Promise<void> {
+    const store = await db();
+    if (!(await canSync()) || !navigator.onLine) return;
+    const owner = crypto.randomUUID();
+    const lease = await store.transaction("rw", store.leases, async () => {
+      const current = await store.leases.get("sync");
+      if (current && current.expiresAt > Date.now()) return undefined;
+      const next = {
+        key: "sync" as const,
+        owner,
+        generation: (current?.generation ?? 0) + 1,
+        expiresAt: Date.now() + 30_000,
+      };
+      await store.leases.put(next);
+      return next;
+    });
+    if (!lease) return;
+    const controller = new AbortController();
+    let leaseLost = false;
+    activeRun = controller;
+    const renewal = window.setInterval(() => {
+      void store
+        .transaction("rw", store.leases, async () => {
+          const current = await store.leases.get("sync");
+          if (
+            !current ||
+            current.owner !== owner ||
+            current.generation !== lease.generation ||
+            current.expiresAt <= Date.now()
+          ) {
+            leaseLost = true;
+            controller.abort(new Error("Workforce synchronization lease was lost"));
+            return;
+          }
+          await store.leases.put({ ...current, expiresAt: Date.now() + 30_000 });
+        })
+        .catch(() => {
+          leaseLost = true;
+          controller.abort(new Error("Workforce synchronization lease renewal failed"));
+        });
+    }, 10_000);
+    try {
+      const entries = await store.workforceOutbox.orderBy("createdAt").toArray();
+      for (const entry of entries) {
+        if (
+          entry.retryAt > Date.now() ||
+          !(await canSync()) ||
+          !(await ownsLease(store, owner, lease.generation))
+        )
+          continue;
+        const draft = await store.workforceDrafts.get(entry.recordId);
+        if (!draft || draft.syncState === "CONFLICT" || draft.syncState === "VALIDATION_FAILED")
+          continue;
+        await store.workforceOutbox.put({ ...entry, attempts: entry.attempts + 1 });
+        if (entry.action === "DRAFT")
+          await store.workforceDrafts.put({ ...draft, syncState: "SENDING" });
+        let response: Response;
+        try {
+          const path =
+            entry.action === "DRAFT"
+              ? "/api/v1/workforce/sync/commands"
+              : entry.action === "FINALIZE"
+                ? `/api/v1/workforce/drafts/${entry.recordId}/finalize`
+                : `/api/v1/workforce/records/${entry.recordId}/reverse`;
+          response = await authClient.requestForUser(
+            path,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(entry.action === "DRAFT" ? [entry.payload] : entry.payload),
+              signal: controller.signal,
+            },
+            user.id,
+          );
+        } catch (error) {
+          if (
+            controller.signal.aborted ||
+            leaseLost ||
+            !(await canSync()) ||
+            !(await ownsLease(store, owner, lease.generation))
+          )
+            return;
+          if (error instanceof ApiError && isAuthenticationCode(error.code)) {
+            await markWorkforceAuthRequired(store);
+            await workspaceControl.pauseSync(user.id, epoch);
+            return;
+          }
+          await retryWorkforceCommand(store, entry, owner, lease.generation);
+          continue;
+        }
+        if (
+          controller.signal.aborted ||
+          leaseLost ||
+          !(await canSync()) ||
+          !(await ownsLease(store, owner, lease.generation))
+        )
+          return;
+        const responseBody = (await response.json().catch(() => ({}))) as {
+          results?: Array<{
+            ok: boolean;
+            result?: unknown;
+            status?: number;
+            error?: {
+              code?: string;
+              message?: string;
+              current?: Record<string, unknown>;
+              currentVersion?: number;
+            };
+          }>;
+          code?: string;
+          message?: string;
+        };
+        const outcome = entry.action === "DRAFT" ? responseBody.results?.[0] : undefined;
+        const result = entry.action === "DRAFT" ? outcome?.result : responseBody;
+        const status = outcome?.status ?? response.status;
+        if (
+          (response.status === 401 || response.status === 403) &&
+          (response.status === 401 ||
+            isAuthenticationCode(responseBody.code ?? outcome?.error?.code ?? ""))
+        ) {
+          await markWorkforceAuthRequired(store);
+          await workspaceControl.pauseSync(user.id, epoch);
+          return;
+        }
+        if (!response.ok || (entry.action === "DRAFT" && !outcome?.ok)) {
+          if (status === 409) {
+            await updateWorkforceState(
+              store,
+              entry,
+              "CONFLICT",
+              "نسخهٔ سرور تغییر کرده است؛ پیش‌نویس را بازبینی کنید.",
+              owner,
+              lease.generation,
+              outcome?.error?.current,
+              outcome?.error?.currentVersion,
+            );
+          } else if (status === 400 || status === 422) {
+            await updateWorkforceState(
+              store,
+              entry,
+              "VALIDATION_FAILED",
+              outcome?.error?.message ??
+                responseBody.message ??
+                "اطلاعات پیش‌نویس نیازمند اصلاح است.",
+              owner,
+              lease.generation,
+            );
+          } else {
+            await retryWorkforceCommand(store, entry, owner, lease.generation);
+          }
+          notify();
+          continue;
+        }
+        let acknowledged: Record<string, unknown> | undefined;
+        if (result && typeof result === "object") {
+          let unwrapped = result as Record<string, unknown>;
+          if (
+            "result" in unwrapped &&
+            "replayed" in unwrapped &&
+            unwrapped.result &&
+            typeof unwrapped.result === "object"
+          )
+            unwrapped = unwrapped.result as Record<string, unknown>;
+          if (
+            entry.action === "REVERSE" &&
+            unwrapped.original &&
+            typeof unwrapped.original === "object"
+          )
+            unwrapped = unwrapped.original as Record<string, unknown>;
+          acknowledged = unwrapped;
+        }
+        await store.transaction(
+          "rw",
+          store.workforceDrafts,
+          store.workforceOutbox,
+          store.leases,
+          async () => {
+            const currentLease = await store.leases.get("sync");
+            if (
+              currentLease?.owner !== owner ||
+              currentLease.generation !== lease.generation ||
+              currentLease.expiresAt <= Date.now()
+            )
+              return;
+            await store.workforceOutbox.delete(entry.commandId);
+            const latest = await store.workforceDrafts.get(entry.recordId);
+            if (!latest) return;
+            const pending = await store.workforceOutbox
+              .where("recordId")
+              .equals(entry.recordId)
+              .toArray();
+            const version = Number(acknowledged?.version ?? latest.version);
+            const status: WorkforceLocalStatus =
+              entry.action === "FINALIZE"
+                ? "FINALIZED"
+                : entry.action === "REVERSE"
+                  ? "REVERSED"
+                  : pending.length
+                    ? "PENDING"
+                    : "SYNCED";
+            const updated: WorkforceDraft = {
+              ...latest,
+              version,
+              status:
+                entry.action === "FINALIZE"
+                  ? "FINALIZED"
+                  : entry.action === "REVERSE"
+                    ? "REVERSED"
+                    : latest.status,
+              syncState:
+                latest.editRevision === entry.editRevision || entry.action !== "DRAFT"
+                  ? status
+                  : "PENDING",
+            };
+            delete updated.problem;
+            await store.workforceDrafts.put(updated);
+          },
+        );
+        notify();
+      }
+    } finally {
+      window.clearInterval(renewal);
+      if (activeRun === controller) activeRun = undefined;
+      await store
+        .transaction("rw", store.leases, async () => {
+          const current = await store.leases.get("sync");
+          if (current?.owner === owner && current.generation === lease.generation)
+            await store.leases.put({ ...current, owner: "", expiresAt: 0 });
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  async function retryWorkforceCommand(
+    store: WorkspaceDatabase,
+    entry: WorkforceOutbox,
+    owner: string,
+    generation: number,
+  ) {
+    await store.transaction(
+      "rw",
+      store.workforceDrafts,
+      store.workforceOutbox,
+      store.leases,
+      async () => {
+        const lease = await store.leases.get("sync");
+        if (
+          lease?.owner !== owner ||
+          lease.generation !== generation ||
+          lease.expiresAt <= Date.now()
+        )
+          return;
+        await store.workforceOutbox.update(entry.commandId, {
+          retryAt: Date.now() + Math.min(60_000, 2_000 * 2 ** Math.min(entry.attempts, 5)),
+        });
+        const latest = await store.workforceDrafts.get(entry.recordId);
+        if (!latest || latest.editRevision !== entry.editRevision) return;
+        await store.workforceDrafts.put({
+          ...latest,
+          syncState: entry.action === "FINALIZE" ? "FINALIZE_PENDING" : "RETRY_PENDING",
+          problem: "اتصال برقرار نشد؛ درخواست با همان شناسه دوباره فرستاده می‌شود.",
+        });
+      },
+    );
+    notify();
+  }
+
+  async function updateWorkforceState(
+    store: WorkspaceDatabase,
+    entry: WorkforceOutbox,
+    state: WorkforceLocalStatus,
+    problem: string,
+    owner: string,
+    generation: number,
+    current?: Record<string, unknown>,
+    currentVersion?: number,
+  ) {
+    await store.transaction("rw", store.workforceDrafts, store.leases, async () => {
+      const lease = await store.leases.get("sync");
+      if (
+        lease?.owner !== owner ||
+        lease.generation !== generation ||
+        lease.expiresAt <= Date.now()
+      )
+        return;
+      const draft = await store.workforceDrafts.get(entry.recordId);
+      if (!draft) return;
+      await store.workforceDrafts.put({
+        ...draft,
+        ...(currentVersion ? { version: currentVersion } : {}),
+        ...(current ? { serverData: current } : {}),
+        syncState: state,
+        problem,
+      });
+    });
+  }
+
+  async function markWorkforceAuthRequired(store: WorkspaceDatabase) {
+    await store.transaction("rw", store.workforceDrafts, store.workforceOutbox, async () => {
+      const entries = await store.workforceOutbox.toArray();
+      await Promise.all(
+        entries.map((entry) =>
+          store.workforceDrafts.update(entry.recordId, {
+            syncState: "AUTH_REQUIRED",
+            problem: "برای ادامهٔ همگام‌سازی دوباره وارد شوید.",
+          }),
+        ),
+      );
+    });
+    notify();
+  }
+
   async function withWorkspaceActivity<T>(
     mode: "shared" | "exclusive",
     operation: () => Promise<T>,
@@ -1076,6 +1615,7 @@ export function openDraftWorkspace(
       const store = await db();
       const entries = await store.outbox.toArray();
       const directoryEntries = await store.directoryOutbox.toArray();
+      const workforceEntries = await store.workforceOutbox.toArray();
       const now = Date.now();
       const lease = await store.leases.get("sync");
       const leaseReadyAt = lease && lease.expiresAt > now ? lease.expiresAt : now;
@@ -1095,6 +1635,13 @@ export function openDraftWorkspace(
             draft.syncState !== "RETRY_PENDING" &&
             draft.syncState !== "SENDING")
         )
+          continue;
+        const retryReadyAt = entry.retryAt > now ? entry.retryAt : now;
+        earliest = Math.min(earliest, Math.max(retryReadyAt, leaseReadyAt));
+      }
+      for (const entry of workforceEntries) {
+        const draft = await store.workforceDrafts.get(entry.recordId);
+        if (!draft || draft.syncState === "CONFLICT" || draft.syncState === "VALIDATION_FAILED")
           continue;
         const retryReadyAt = entry.retryAt > now ? entry.retryAt : now;
         earliest = Math.min(earliest, Math.max(retryReadyAt, leaseReadyAt));
@@ -1254,7 +1801,7 @@ function isAuthenticationCode(code: string): boolean {
   ].includes(code);
 }
 
-function rowFrom(type: DirectoryType, data: Record<string, unknown>): DirectoryRow {
+function rowFrom(type: DirectorySnapshotType, data: Record<string, unknown>): DirectoryRow {
   const id = String(data.id ?? "");
   return {
     id: `${type}:${id}`,
@@ -1263,6 +1810,36 @@ function rowFrom(type: DirectoryType, data: Record<string, unknown>): DirectoryR
     version: Number(data.version ?? 0),
     updatedAt: String(data.updatedAt ?? new Date().toISOString()),
   };
+}
+
+function workforceInputFromRecord(row: Record<string, unknown>): WorkforceRecordInput | undefined {
+  const base = {
+    projectId: row.projectId,
+    workerId: row.workerId,
+    businessDate: row.businessDate,
+    description: row.description,
+    kind: row.kind,
+  };
+  try {
+    if (row.kind === "EARNING") {
+      const engagementType = row.engagementType;
+      const calculated = ["DAILY", "HOURLY", "QUANTITY"].includes(String(engagementType));
+      return WorkforceRecordInputSchema.parse({
+        ...base,
+        engagementType,
+        ...(calculated
+          ? { quantity: row.quantity, rateToman: row.rateToman }
+          : { amountToman: row.amountToman }),
+      });
+    }
+    return WorkforceRecordInputSchema.parse({
+      ...base,
+      amountToman: row.amountToman,
+      ...(row.kind === "WORKER_PAYMENT" ? { paymentKind: row.paymentKind } : {}),
+    });
+  } catch {
+    return undefined;
+  }
 }
 
 async function rebuildDirectorySnapshot(

@@ -208,7 +208,7 @@ export const DirectoryChangesSchema = z.object({
   changes: z.array(
     z.object({
       revision: z.number().int().positive(),
-      entityType: z.enum(["PROJECT", "CONTACT", "ENGAGEMENT", "BUDGET"]),
+      entityType: z.enum(["PROJECT", "CONTACT", "ENGAGEMENT", "BUDGET", "WORKFORCE_RECORD"]),
       entityId: UuidSchema,
       snapshot: z.record(z.string(), z.unknown()),
     }),
@@ -225,6 +225,135 @@ export type DirectoryCommand = z.infer<typeof DirectoryCommandSchema>;
 export type DirectoryAcknowledgement = z.infer<typeof DirectoryAcknowledgementSchema>;
 export type DirectoryBootstrap = z.infer<typeof DirectoryBootstrapSchema>;
 export type DirectoryChanges = z.infer<typeof DirectoryChangesSchema>;
+
+const WorkforceQuantitySchema = z
+  .string()
+  .max(19)
+  .regex(/^(0|[1-9][0-9]*)(\.[0-9]{1,3})?$/)
+  .refine((value) => (value.split(".")[0]?.length ?? 0) <= 15, "Quantity is too large")
+  .refine((value) => /[1-9]/.test(value), "Quantity must be greater than zero");
+const WorkforceMoneySchema = TomanSchema.max(24);
+const WorkforceTextSchema = z.string().trim().min(1).max(1000);
+const WorkforceBaseSchema = z.object({
+  projectId: UuidSchema,
+  workerId: UuidSchema,
+  businessDate: DateOnlySchema,
+  description: WorkforceTextSchema,
+});
+export const WorkforceRecordInputSchema = z
+  .discriminatedUnion("kind", [
+    WorkforceBaseSchema.extend({
+      kind: z.literal("EARNING"),
+      engagementType: z.enum([
+        "DAILY",
+        "HOURLY",
+        "QUANTITY",
+        "MONTHLY",
+        "FIXED_CONTRACT",
+        "MANUAL",
+      ]),
+      quantity: WorkforceQuantitySchema.optional(),
+      rateToman: WorkforceMoneySchema.optional(),
+      amountToman: WorkforceMoneySchema.optional(),
+    }),
+    WorkforceBaseSchema.extend({ kind: z.literal("DEDUCTION"), amountToman: WorkforceMoneySchema }),
+    WorkforceBaseSchema.extend({
+      kind: z.literal("WORKER_PAYMENT"),
+      amountToman: WorkforceMoneySchema,
+      paymentKind: z.enum(["PAYMENT", "ADVANCE"]),
+    }),
+  ])
+  .superRefine((value, context) => {
+    if (value.kind === "EARNING") {
+      const calculated = ["DAILY", "HOURLY", "QUANTITY"].includes(value.engagementType);
+      if (calculated && value.amountToman !== undefined)
+        context.addIssue({
+          code: "custom",
+          path: ["amountToman"],
+          message: "Calculated earnings cannot include a client total",
+        });
+      if (calculated && (!value.quantity || value.rateToman === undefined))
+        context.addIssue({
+          code: "custom",
+          path: ["quantity"],
+          message: "Quantity and rate are required",
+        });
+      if (!calculated && (value.quantity !== undefined || value.rateToman !== undefined))
+        context.addIssue({
+          code: "custom",
+          path: ["quantity"],
+          message: "Manual amounts do not accept quantity or rate",
+        });
+      if (!calculated && (!value.amountToman || value.amountToman === "0"))
+        context.addIssue({
+          code: "custom",
+          path: ["amountToman"],
+          message: "An approved amount is required",
+        });
+      if (value.amountToman === "0")
+        context.addIssue({
+          code: "custom",
+          path: ["amountToman"],
+          message: "Amount must be greater than zero",
+        });
+    } else if (value.amountToman === "0") {
+      context.addIssue({
+        code: "custom",
+        path: ["amountToman"],
+        message: "Amount must be greater than zero",
+      });
+    }
+  });
+export const WorkforceDraftCommandSchema = z
+  .object({
+    commandId: UuidSchema,
+    recordId: UuidSchema,
+    expectedVersion: z.number().int().nonnegative(),
+    input: WorkforceRecordInputSchema,
+  })
+  .strict();
+export const WorkforceFinalizeCommandSchema = z
+  .object({
+    commandId: UuidSchema,
+    recordId: UuidSchema,
+    expectedVersion: z.number().int().positive(),
+  })
+  .strict();
+export const WorkforceReverseCommandSchema = WorkforceFinalizeCommandSchema.extend({
+  reason: WorkforceTextSchema,
+}).strict();
+export const WorkforceRecordSchema = z.object({
+  id: UuidSchema,
+  projectId: UuidSchema,
+  workerId: UuidSchema,
+  kind: z.enum(["EARNING", "DEDUCTION", "WORKER_PAYMENT"]),
+  businessDate: DateOnlySchema,
+  engagementType: z
+    .enum(["DAILY", "HOURLY", "QUANTITY", "MONTHLY", "FIXED_CONTRACT", "MANUAL"])
+    .nullable(),
+  quantity: z.string().nullable(),
+  rateToman: WorkforceMoneySchema.nullable(),
+  amountToman: WorkforceMoneySchema,
+  paymentKind: z.enum(["PAYMENT", "ADVANCE"]).nullable(),
+  description: z.string(),
+  status: z.enum(["DRAFT", "FINALIZED", "REVERSED"]),
+  version: z.number().int().positive(),
+  reversalOfId: UuidSchema.nullable(),
+  reversalReason: z.string().nullable(),
+});
+export const WorkforceReportFilterSchema = z.object({
+  workerId: UuidSchema,
+  projectId: UuidSchema.optional(),
+  from: DateOnlySchema.optional(),
+  to: DateOnlySchema.optional(),
+});
+export type WorkforceRecordInput = z.infer<typeof WorkforceRecordInputSchema>;
+export type WorkforceDraftCommand = z.infer<typeof WorkforceDraftCommandSchema>;
+export type WorkforceFinalizeCommand = z.infer<typeof WorkforceFinalizeCommandSchema>;
+export type WorkforceReverseCommand = z.infer<typeof WorkforceReverseCommandSchema>;
+export type WorkforceRecord = z.infer<typeof WorkforceRecordSchema>;
+export type WorkforceReportFilter = z.infer<typeof WorkforceReportFilterSchema>;
+
 export const TemporaryCredentialSchema = z
   .object({
     admin: UserSchema,

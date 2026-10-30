@@ -25,6 +25,8 @@ import {
   sessions,
   syncChanges,
   users,
+  workforceRecords,
+  workforceReceipts,
 } from "../src/db/schema.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -65,6 +67,29 @@ async function main(): Promise<void> {
   ];
   const syncMarker = `M1A_BROWSER_SYNC::${runId}`;
   const privateMarker = `M1A_BROWSER_PRIVATE::${runId}`;
+  const workforceProject = {
+    id: randomUUID(),
+    name: `پروژهٔ صورت‌حساب ${runId.slice(0, 6)}`,
+  };
+  const workforceWorker = {
+    id: randomUUID(),
+    name: `کارگر صورت‌حساب ${runId.slice(0, 6)}`,
+  };
+  const workforceEngagementId = randomUUID();
+  const reviewSamples = [
+    {
+      workerId: randomUUID(),
+      workerName: `Review sample LAB01 ${runId.slice(0, 6)}`,
+      projectId: randomUUID(),
+      projectName: `Review project LAB01 ${runId.slice(0, 6)}`,
+    },
+    {
+      workerId: randomUUID(),
+      workerName: `Review sample period ${runId.slice(0, 6)}`,
+      projectId: randomUUID(),
+      projectName: `Review project period ${runId.slice(0, 6)}`,
+    },
+  ];
   const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client, { schema });
 
@@ -87,6 +112,183 @@ async function main(): Promise<void> {
           credentialVersion: 1,
         });
       }
+      await tx.insert(contacts).values({
+        id: workforceWorker.id,
+        displayName: workforceWorker.name,
+        phone: null,
+        isWorker: true,
+        isSupplier: false,
+        isOwner: false,
+        archived: false,
+        createdBy: fixtures[0]!.id,
+        updatedBy: fixtures[0]!.id,
+      });
+      await tx.insert(projects).values({
+        id: workforceProject.id,
+        name: workforceProject.name,
+        ownerContactId: null,
+        startsOn: "2020-01-01",
+        endsOn: null,
+        lifecycle: "ACTIVE",
+        contractInitialToman: "0",
+        createdBy: fixtures[0]!.id,
+        updatedBy: fixtures[0]!.id,
+      });
+      await tx.insert(engagements).values({
+        id: workforceEngagementId,
+        workerId: workforceWorker.id,
+        projectId: workforceProject.id,
+        type: "DAILY",
+        defaultRateToman: "1000000",
+        startsOn: "2020-01-01",
+        endsOn: null,
+        archived: false,
+        createdBy: fixtures[0]!.id,
+        updatedBy: fixtures[0]!.id,
+      });
+      for (const sample of reviewSamples) {
+        await tx.insert(contacts).values({
+          id: sample.workerId,
+          displayName: sample.workerName,
+          phone: null,
+          isWorker: true,
+          isSupplier: false,
+          isOwner: false,
+          archived: false,
+          createdBy: fixtures[0]!.id,
+          updatedBy: fixtures[0]!.id,
+        });
+        await tx.insert(projects).values({
+          id: sample.projectId,
+          name: sample.projectName,
+          ownerContactId: null,
+          startsOn: "2020-01-01",
+          endsOn: null,
+          lifecycle: "ACTIVE",
+          contractInitialToman: "0",
+          createdBy: fixtures[0]!.id,
+          updatedBy: fixtures[0]!.id,
+        });
+      }
+      const actorId = fixtures[0]!.id;
+      const finalizedAt = new Date();
+      const reviewRecords: Array<typeof workforceRecords.$inferInsert> = [
+        {
+          id: randomUUID(),
+          projectId: reviewSamples[0]!.projectId,
+          workerId: reviewSamples[0]!.workerId,
+          kind: "EARNING",
+          businessDate: "2026-10-29",
+          engagementType: "DAILY",
+          quantity: "3",
+          rateToman: "1000000",
+          amountToman: "3000000",
+          paymentKind: null,
+          description: "LAB01 gross earnings",
+          status: "FINALIZED",
+          version: 2,
+          createdBy: actorId,
+          updatedBy: actorId,
+          finalizedBy: actorId,
+          finalizedAt,
+        },
+        {
+          id: randomUUID(),
+          projectId: reviewSamples[0]!.projectId,
+          workerId: reviewSamples[0]!.workerId,
+          kind: "DEDUCTION",
+          businessDate: "2026-10-29",
+          engagementType: null,
+          quantity: null,
+          rateToman: null,
+          amountToman: "200000",
+          paymentKind: null,
+          description: "LAB01 deduction",
+          status: "FINALIZED",
+          version: 2,
+          createdBy: actorId,
+          updatedBy: actorId,
+          finalizedBy: actorId,
+          finalizedAt,
+        },
+        {
+          id: randomUUID(),
+          projectId: reviewSamples[0]!.projectId,
+          workerId: reviewSamples[0]!.workerId,
+          kind: "WORKER_PAYMENT",
+          businessDate: "2026-10-29",
+          engagementType: null,
+          quantity: null,
+          rateToman: null,
+          amountToman: "500000",
+          paymentKind: "ADVANCE",
+          description: "LAB01 advance",
+          status: "FINALIZED",
+          version: 2,
+          createdBy: actorId,
+          updatedBy: actorId,
+          finalizedBy: actorId,
+          finalizedAt,
+        },
+        {
+          id: randomUUID(),
+          projectId: reviewSamples[0]!.projectId,
+          workerId: reviewSamples[0]!.workerId,
+          kind: "WORKER_PAYMENT",
+          businessDate: "2026-10-29",
+          engagementType: null,
+          quantity: null,
+          rateToman: null,
+          amountToman: "1000000",
+          paymentKind: "PAYMENT",
+          description: "LAB01 payment",
+          status: "FINALIZED",
+          version: 2,
+          createdBy: actorId,
+          updatedBy: actorId,
+          finalizedBy: actorId,
+          finalizedAt,
+        },
+        {
+          id: randomUUID(),
+          projectId: reviewSamples[1]!.projectId,
+          workerId: reviewSamples[1]!.workerId,
+          kind: "EARNING",
+          businessDate: "2026-10-27",
+          engagementType: "DAILY",
+          quantity: "1",
+          rateToman: "1000000",
+          amountToman: "1000000",
+          paymentKind: null,
+          description: "Opening balance earning",
+          status: "FINALIZED",
+          version: 2,
+          createdBy: actorId,
+          updatedBy: actorId,
+          finalizedBy: actorId,
+          finalizedAt,
+        },
+        {
+          id: randomUUID(),
+          projectId: reviewSamples[1]!.projectId,
+          workerId: reviewSamples[1]!.workerId,
+          kind: "WORKER_PAYMENT",
+          businessDate: "2026-10-28",
+          engagementType: null,
+          quantity: null,
+          rateToman: null,
+          amountToman: "200000",
+          paymentKind: "PAYMENT",
+          description: "Payment in selected period",
+          status: "FINALIZED",
+          version: 2,
+          createdBy: actorId,
+          updatedBy: actorId,
+          finalizedBy: actorId,
+          finalizedAt,
+        },
+      ];
+      await tx.insert(workforceRecords).values(reviewRecords);
     });
 
     const apiPort = await freePort();
@@ -103,6 +305,13 @@ async function main(): Promise<void> {
           M1A_TEST_PASSWORD: fixtures[0]!.password,
           M1A_TEST_ALT_USERNAME: fixtures[1]!.username,
           M1A_TEST_ALT_PASSWORD: fixtures[1]!.password,
+          M2_TEST_PROJECT_NAME: workforceProject.name,
+          M2_TEST_WORKER_NAME: workforceWorker.name,
+          M2_TEST_ENGAGEMENT_ID: workforceEngagementId,
+          M2_REVIEW_LAB01_WORKER_ID: reviewSamples[0]!.workerId,
+          M2_REVIEW_LAB01_PROJECT_ID: reviewSamples[0]!.projectId,
+          M2_REVIEW_PERIOD_WORKER_ID: reviewSamples[1]!.workerId,
+          M2_REVIEW_PERIOD_PROJECT_ID: reviewSamples[1]!.projectId,
           AUTH_ALLOWED_ORIGIN: "http://127.0.0.1:4173",
           API_PORT: String(apiPort),
           API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
@@ -134,10 +343,31 @@ async function main(): Promise<void> {
         0,
         "the next account never uploads the previous account's pending command",
       );
+      const finalizedWorkforce = await db
+        .select()
+        .from(workforceRecords)
+        .where(eq(workforceRecords.projectId, workforceProject.id));
+      assert.equal(
+        finalizedWorkforce.length,
+        1,
+        "M2 browser flow creates exactly one workforce record",
+      );
+      assert.equal(finalizedWorkforce[0]!.workerId, workforceWorker.id);
+      assert.equal(finalizedWorkforce[0]!.createdBy, fixtures[0]!.id);
+      assert.equal(finalizedWorkforce[0]!.kind, "EARNING");
+      assert.equal(finalizedWorkforce[0]!.status, "FINALIZED");
+      assert.equal(finalizedWorkforce[0]!.amountToman, "3000000");
+      assert.equal(finalizedWorkforce[0]!.quantity, "3");
+      assert.equal(finalizedWorkforce[0]!.rateToman, "1000000");
+      assert.equal(
+        finalizedWorkforce[0]!.description,
+        `Edited workforce ${runId.slice(0, 6)}`,
+        "offline revision reaches the one finalized server record",
+      );
     }
     process.stdout.write(
       browserArgs.length === 0
-        ? "Browser M1a/M1b verification passed: authenticated offline notes and directories, sync recovery, account isolation, parent ordering, conflict resolution and mobile RTL.\n"
+        ? "Browser M1a/M1b/M2 verification passed: authenticated offline notes and directories, sync recovery, account isolation, parent ordering, conflict resolution, workforce lost-reply replay, explicit finalization and mobile RTL.\n"
         : "Filtered authenticated browser verification passed.\n",
     );
   } finally {
@@ -148,6 +378,8 @@ async function main(): Promise<void> {
       await tx.delete(businessAudit).where(inArray(businessAudit.actorUserId, ids));
       await tx.delete(syncChanges).where(inArray(syncChanges.actorUserId, ids));
       await tx.delete(directoryReceipts).where(inArray(directoryReceipts.userId, ids));
+      await tx.delete(workforceReceipts).where(inArray(workforceReceipts.userId, ids));
+      await tx.delete(workforceRecords).where(inArray(workforceRecords.createdBy, ids));
       await tx.delete(engagements).where(inArray(engagements.createdBy, ids));
       await tx.delete(projectBudgets).where(inArray(projectBudgets.updatedBy, ids));
       await tx.delete(projects).where(inArray(projects.createdBy, ids));

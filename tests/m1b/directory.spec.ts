@@ -20,11 +20,13 @@ test("offline directory sync orders parents first and presents a 360 px Persian 
 
   await page.setViewportSize({ width: 360, height: 800 });
   await signIn(page, username, password);
-  await expect(page.getByRole("heading", { name: "پروژه‌ها و فهرست‌ها" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "پروژه‌ها", exact: true, level: 1 }),
+  ).toBeVisible();
   await expect(page.locator("main")).toHaveAttribute("dir", "rtl");
   await context.setOffline(true);
 
-  await page.getByRole("tab", { name: "نیرو و تأمین‌کننده" }).click();
+  await page.getByRole("link", { name: "افراد و تأمین‌کنندگان", exact: true }).click();
   await page.getByLabel("نام", { exact: true }).fill(ownerName);
   await page.getByLabel("کارفرما", { exact: true }).check();
   await page.getByRole("button", { name: "ذخیرهٔ مخاطب", exact: true }).click();
@@ -35,25 +37,26 @@ test("offline directory sync orders parents first and presents a 360 px Persian 
   await page.getByRole("button", { name: "ذخیرهٔ مخاطب", exact: true }).click();
   await expect(page.getByRole("heading", { name: workerName })).toBeVisible();
 
-  await page.getByRole("tab", { name: "پروژه‌ها" }).click();
+  await page.getByRole("link", { name: "پروژه‌ها", exact: true }).click();
   await page.getByLabel("نام پروژه").fill(projectName);
   await page.locator('select[name="ownerContactId"]').selectOption({ label: ownerName });
-  await page.locator('input[name="startsOn"]').fill("۱۴۰۵/۰۷/۰۶");
-  await page.locator('input[name="endsOn"]').fill("۱۴۰۵/۰۷/۱۰");
   await page.getByLabel("مبلغ اولیهٔ قرارداد (تومان)").fill("۱۲۰۰۰۰۰۰۰");
   await page.getByLabel("عنوان ردیف بودجه (اختیاری)").fill("نیروی کار");
   await page.getByLabel("مبلغ ردیف بودجه (تومان)").fill("۲۵۰۰۰۰۰");
+  await setHiddenDate(page, "startsOn", "2026-09-28");
+  await setHiddenDate(page, "endsOn", "2026-10-02");
   await page.getByRole("button", { name: "ذخیرهٔ پروژه", exact: true }).click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("tab", { name: "همکاری‌ها" }).click();
-  await page.locator('select[name="workerId"]').selectOption({ label: workerName });
-  await page.locator('select[name="projectId"]').selectOption({ label: projectName });
-  await page.locator('select[name="type"]').selectOption("DAILY");
+  await page.getByRole("link", { name: "همکاری‌ها", exact: true }).click();
+  await page.getByLabel("نیرو", { exact: true }).click();
+  await page.getByRole("option", { name: workerName, exact: true }).click();
+  await page.getByLabel("پروژه", { exact: true }).click();
+  await page.getByRole("option", { name: projectName, exact: true }).click();
   await page.getByLabel("نرخ پیش‌فرض (تومان)").fill("۳۵۰۰۰۰");
-  await page.locator('input[name="startsOn"]').fill("۱۴۰۵/۰۷/۰۶");
+  await setHiddenDate(page, "startsOn", "2026-09-28");
   await page.getByRole("button", { name: "ذخیرهٔ همکاری", exact: true }).click();
-  await expect(page.getByRole("heading", { name: `${workerName} · ${projectName}` })).toBeVisible();
+  await expect(engagementHeading(page, workerName, projectName)).toBeVisible();
   await page.screenshot({
     path: resolve(screenshotDirectory, "m1b-mobile-offline-queue.png"),
     fullPage: true,
@@ -63,12 +66,9 @@ test("offline directory sync orders parents first and presents a 360 px Persian 
     .toBe(true);
 
   await page.reload();
-  await page
-    .getByRole("tablist", { name: "بخش‌های اطلاعات شرکت" })
-    .getByRole("tab", { name: "همکاری‌ها" })
-    .click();
-  await expect(page.getByRole("heading", { name: `${workerName} · ${projectName}` })).toBeVisible();
-  await page.getByRole("tab", { name: "پروژه‌ها" }).click();
+  await page.getByRole("link", { name: "همکاری‌ها", exact: true }).click();
+  await expect(engagementHeading(page, workerName, projectName)).toBeVisible();
+  await page.getByRole("link", { name: "پروژه‌ها", exact: true }).click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
   context.on("request", (request) => {
@@ -125,7 +125,7 @@ test("offline directory sync orders parents first and presents a 360 px Persian 
     .locator('[data-testid="project-card"]')
     .filter({ hasText: updatedProjectName });
   await updatedCard.getByRole("button", { name: "بایگانی", exact: true }).click();
-  await page.getByLabel("نمایش بایگانی‌شده‌ها").check();
+  await page.getByLabel("نمایش پروژه‌های بایگانی‌شده").check();
   const archivedCard = page
     .locator('[data-testid="project-card"]')
     .filter({ hasText: updatedProjectName });
@@ -135,7 +135,7 @@ test("offline directory sync orders parents first and presents a 360 px Persian 
     fullPage: true,
   });
   await archivedCard.getByRole("button", { name: "بازگشایی", exact: true }).click();
-  await page.getByLabel("نمایش بایگانی‌شده‌ها").uncheck();
+  await page.getByLabel("نمایش پروژه‌های بایگانی‌شده").uncheck();
   await expect(page.getByRole("heading", { name: updatedProjectName })).toBeVisible();
 });
 
@@ -266,7 +266,9 @@ test("expired change feed rebuild preserves local drafts and queued commands", a
   let expiredResponses = 0;
   await page.setViewportSize({ width: 360, height: 800 });
   await signIn(page, username, password);
-  await expect(page.getByRole("heading", { name: "پروژه‌ها و فهرست‌ها" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "پروژه‌ها", exact: true, level: 1 }),
+  ).toBeVisible();
   await context.setOffline(true);
   await page.getByLabel("نام پروژه").fill(projectName);
   await page.getByLabel("مبلغ اولیهٔ قرارداد (تومان)").fill("۴۰۰۰۰۰۰");
@@ -450,7 +452,22 @@ async function signIn(page: Page, username: string, password: string) {
   await page.getByLabel("گذرواژه", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود", exact: true }).click();
   expect((await loginResponse).status()).toBe(200);
-  await expect(page.getByRole("heading", { name: "پروژه‌ها و فهرست‌ها" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "پروژه‌ها", exact: true, level: 1 }),
+  ).toBeVisible();
+}
+
+async function setHiddenDate(page: Page, name: "startsOn" | "endsOn", value: string) {
+  await page.locator(`input[name="${name}"]`).evaluate((input, next) => {
+    (input as HTMLInputElement).value = next;
+  }, value);
+}
+
+function engagementHeading(page: Page, workerName: string, projectName: string) {
+  return page
+    .getByRole("heading", { level: 3 })
+    .filter({ hasText: workerName })
+    .filter({ hasText: projectName });
 }
 
 function projectSnapshot(id: string, name: string, version: number) {

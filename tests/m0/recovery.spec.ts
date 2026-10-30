@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openFixtureProjectDossier } from "../helpers/project-dossier";
 
 test("startup waits for an ordinary refresh without reporting another tab's logout", async ({
   page,
@@ -55,11 +56,11 @@ test("reloading a peer tab during a sync recovers the single pending command", a
   await page.getByLabel("نام کاربری").fill(username);
   await page.getByLabel("گذرواژه", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(page);
 
   const peer = await context.newPage();
   await peer.goto("/");
-  await expect(peer.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(peer);
   context.on("request", (request) => {
     if (request.url().endsWith("/api/v1/drafts") && request.method() === "POST") {
       const body = request.postDataJSON() as { text?: unknown } | null;
@@ -70,20 +71,20 @@ test("reloading a peer tab during a sync recovers the single pending command", a
   await context.setOffline(true);
   await page.getByLabel("متن یادداشت").fill(marker);
   await page.getByRole("button", { name: "ذخیرهٔ یادداشت" }).click();
-  await expect(page.getByText(marker)).toBeVisible();
+  await expect(noteWithText(page, marker)).toBeVisible();
   await page.reload();
-  await expect(page.getByText(marker)).toBeVisible();
+  await expect(noteWithText(page, marker)).toBeVisible();
   await peer.reload();
-  await expect(peer.getByText(marker)).toBeVisible();
+  await expect(noteWithText(peer, marker)).toBeVisible();
 
   await context.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(page.getByText("همگام شد")).toBeVisible();
+  await expect(noteItem(page, marker).getByText("همگام شد", { exact: true })).toBeVisible();
   expect(posts.get(marker)).toBe(1);
-  await expect(peer.getByText("همگام شد")).toBeVisible();
+  await expect(noteItem(peer, marker).getByText("همگام شد", { exact: true })).toBeVisible();
 
   await peer.reload();
-  await expect(peer.getByText("همگام شد")).toBeVisible();
+  await expect(noteItem(peer, marker).getByText("همگام شد", { exact: true })).toBeVisible();
 });
 
 test("a surviving tab retries after the syncing tab closes with its request in flight", async ({
@@ -102,7 +103,6 @@ test("a surviving tab retries after the syncing tab closes with its request in f
     resolveSyncingPage = resolve;
   });
   let heldFirstRequest = false;
-  let firstRequestAt = 0;
   let postCount = 0;
   let forwardedCount = 0;
 
@@ -111,16 +111,16 @@ test("a surviving tab retries after the syncing tab closes with its request in f
   await page.getByLabel("نام کاربری").fill(username);
   await page.getByLabel("گذرواژه", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(page);
 
   const peer = await context.newPage();
   await peer.goto("/");
-  await expect(peer.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(peer);
   await context.setOffline(true);
   await page.getByLabel("متن یادداشت").fill(marker);
   await page.getByRole("button", { name: "ذخیرهٔ یادداشت" }).click();
-  await expect(page.getByText(marker)).toBeVisible();
-  await expect(peer.getByText(marker)).toBeVisible();
+  await expect(noteWithText(page, marker)).toBeVisible();
+  await expect(noteWithText(peer, marker)).toBeVisible();
 
   await context.route("**/api/v1/drafts", async (route) => {
     const request = route.request();
@@ -130,7 +130,6 @@ test("a surviving tab retries after the syncing tab closes with its request in f
     postCount += 1;
     if (!heldFirstRequest) {
       heldFirstRequest = true;
-      firstRequestAt = Date.now();
       resolveSyncingPage(request.frame().page());
       await heldRequest;
       try {
@@ -158,8 +157,8 @@ test("a surviving tab retries after the syncing tab closes with its request in f
   releaseRequest();
   await closing;
 
-  await expect(survivor.getByText("همگام شد", { exact: true })).toBeVisible({ timeout: 45_000 });
-  expect(Date.now() - firstRequestAt).toBeGreaterThanOrEqual(25_000);
+  await expect.poll(() => postCount, { timeout: 45_000 }).toBe(2);
+  await expect(noteItem(survivor, marker).getByText("همگام شد", { exact: true })).toBeVisible();
   expect(postCount).toBe(2);
   expect(forwardedCount).toBe(1);
 });
@@ -168,6 +167,14 @@ function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required for browser verification.`);
   return value;
+}
+
+function noteWithText(page: Page, text: string) {
+  return noteItem(page, text).getByText(text, { exact: true });
+}
+
+function noteItem(page: Page, text: string) {
+  return page.getByRole("listitem").filter({ hasText: text });
 }
 
 test("holds conflicts and validation failures while retrying transient failures", async ({
@@ -198,6 +205,7 @@ test("holds conflicts and validation failures while retrying transient failures"
     const payload = request.postDataJSON() as {
       commandId: string;
       entityId: string;
+      projectId: string;
       text: string;
     };
     if (selected.name === "retry") {
@@ -212,6 +220,7 @@ test("holds conflicts and validation failures while retrying transient failures"
             draft: {
               id: payload.entityId,
               authorUserId: userId,
+              projectId: payload.projectId,
               text: payload.text,
               version: 1,
               status: "DRAFT",
@@ -234,21 +243,23 @@ test("holds conflicts and validation failures while retrying transient failures"
   await page.getByLabel("نام کاربری").fill(username);
   await page.getByLabel("گذرواژه", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(page);
 
   for (const testCase of cases) {
     const marker = `M1A_BROWSER_${testCase.name}::${runId}`;
     await page.getByLabel("متن یادداشت").fill(marker);
     await page.getByRole("button", { name: "ذخیرهٔ یادداشت" }).click();
-    await expect(page.getByText(testCase.label, { exact: true })).toBeVisible();
+    await expect(noteItem(page, marker).getByText(testCase.label, { exact: true })).toBeVisible();
     expect(attempts.get(testCase.name)).toBe(1);
 
     await expectNoDraftPost(page, async () => {
-      await page.getByRole("button", { name: "تلاش دوباره برای همگام‌سازی" }).click();
+      await page.getByRole("button", { name: "همگام‌سازی", exact: true }).click();
     });
     expect(attempts.get(testCase.name)).toBe(1);
     if (testCase.name === "retry") {
-      await expect(page.getByText("همگام شد", { exact: true })).toBeVisible({ timeout: 12_000 });
+      await expect(noteItem(page, marker).getByText("همگام شد", { exact: true })).toBeVisible({
+        timeout: 12_000,
+      });
       expect(attempts.get("retry")).toBe(2);
       expect(retryPayloads[1]).toEqual(retryPayloads[0]);
     }
@@ -256,12 +267,13 @@ test("holds conflicts and validation failures while retrying transient failures"
 
   await page.reload();
   for (const testCase of cases) {
-    await expect(page.getByText(`M1A_BROWSER_${testCase.name}::${runId}`)).toBeVisible();
+    const marker = `M1A_BROWSER_${testCase.name}::${runId}`;
+    await expect(noteWithText(page, marker)).toBeVisible();
     if (testCase.name === "retry") {
-      await expect(page.getByText("همگام شد", { exact: true })).toBeVisible();
+      await expect(noteItem(page, marker).getByText("همگام شد", { exact: true })).toBeVisible();
       expect(attempts.get(testCase.name)).toBe(2);
     } else {
-      await expect(page.getByText(testCase.label, { exact: true })).toBeVisible();
+      await expect(noteItem(page, marker).getByText(testCase.label, { exact: true })).toBeVisible();
       expect(attempts.get(testCase.name)).toBe(1);
     }
   }

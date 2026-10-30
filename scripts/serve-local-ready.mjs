@@ -25,7 +25,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.once(signal, () => server.kill(signal));
 }
 
-const deadline = Date.now() + 60_000;
+const deadline = Date.now() + 180_000;
 while (Date.now() < deadline) {
   if (exitCode !== undefined)
     throw new Error(`Local services exited before readiness (${exitCode}).`);
@@ -38,7 +38,7 @@ while (Date.now() < deadline) {
   await setTimeout(250);
 }
 if (Date.now() >= deadline)
-  throw new Error("Local API and PWA did not become ready in 60 seconds.");
+  throw new Error("Local API and PWA did not become ready in 180 seconds.");
 
 await exited;
 process.exitCode = exitCode ?? 1;

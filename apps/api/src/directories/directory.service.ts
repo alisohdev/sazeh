@@ -21,6 +21,7 @@ import {
   directoryBootstrapSnapshots,
   directoryReceipts,
   engagements,
+  materials,
   projectBudgets,
   projects,
   syncChanges,
@@ -276,17 +277,20 @@ export class DirectoryService {
     return this.db.transaction(
       async (tx) => {
         const [cursor] = await tx.select().from(syncRevision).where(eq(syncRevision.singleton, 1));
-        const [projectRows, contactRows, engagementRows, budgetRows] = await Promise.all([
-          tx.select().from(projects),
-          tx.select().from(contacts),
-          tx.select().from(engagements),
-          tx.select().from(projectBudgets),
-        ]);
+        const [projectRows, contactRows, engagementRows, budgetRows, materialRows] =
+          await Promise.all([
+            tx.select().from(projects),
+            tx.select().from(contacts),
+            tx.select().from(engagements),
+            tx.select().from(projectBudgets),
+            tx.select().from(materials),
+          ]);
         const items = [
           ...projectRows.map((entity) => ({ entityType: "PROJECT", entity })),
           ...contactRows.map((entity) => ({ entityType: "CONTACT", entity })),
           ...engagementRows.map((entity) => ({ entityType: "ENGAGEMENT", entity })),
           ...budgetRows.map((entity) => ({ entityType: "BUDGET", entity })),
+          ...materialRows.map((entity) => ({ entityType: "MATERIAL", entity })),
         ].sort((a, b) =>
           a.entityType === b.entityType
             ? String(a.entity.id).localeCompare(String(b.entity.id))

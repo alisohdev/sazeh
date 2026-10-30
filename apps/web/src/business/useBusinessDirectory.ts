@@ -21,19 +21,22 @@ export function useBusinessDirectory({ user, repository, onStatus }: Props) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ["business-directory", user.id] as const, [user.id]);
   const loadDirectory = useCallback(async (): Promise<WorkspaceDirectoryData> => {
-    const [projects, contacts, engagements, budgets, lastSync, pending] = await Promise.all([
-      repository.directoryItems("PROJECT"),
-      repository.directoryItems("CONTACT"),
-      repository.directoryItems("ENGAGEMENT"),
-      repository.directoryItems("BUDGET"),
-      repository.lastDirectorySync(),
-      repository.pendingCount(),
-    ]);
+    const [projects, contacts, engagements, budgets, materials, lastSync, pending] =
+      await Promise.all([
+        repository.directoryItems("PROJECT"),
+        repository.directoryItems("CONTACT"),
+        repository.directoryItems("ENGAGEMENT"),
+        repository.directoryItems("BUDGET"),
+        repository.directoryItems("MATERIAL"),
+        repository.lastDirectorySync(),
+        repository.pendingCount(),
+      ]);
     return {
       projects: projects as DirectoryRecord[],
       contacts: contacts as DirectoryRecord[],
       engagements: engagements as DirectoryRecord[],
       budgets: budgets as DirectoryRecord[],
+      materials: materials as DirectoryRecord[],
       lastSync: lastSync ?? "",
       pending,
     };

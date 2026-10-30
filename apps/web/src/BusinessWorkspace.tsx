@@ -5,13 +5,15 @@ import type { AppController } from "./app/useAppController";
 import type { DraftWorkspace } from "./drafts/draft-repository";
 import { BusinessTabs } from "./business/components/BusinessTabs";
 import { ProjectDetailPage } from "./business/components/ProjectDetailPage";
+import { WorkspaceHeader } from "./business/components/WorkspaceHeader";
 import { selectDirectory } from "./business/selectors";
 import { initialWorkspaceState, workspaceReducer } from "./business/workspace-state";
 import type { DirectoryRecord, WorkspaceDirectoryData, WorkspaceTab } from "./business/types";
 import { useBusinessDirectory } from "./business/useBusinessDirectory";
 import { WorkforceWorkspace } from "./workforce/WorkforceWorkspace";
+import { ProcurementWorkspace } from "./procurement/ProcurementWorkspace";
 
-type Page = WorkspaceTab | "project" | "workforce";
+type Page = WorkspaceTab | "project" | "workforce" | "procurement";
 type NoteController = Pick<AppController, "drafts" | "saveDraft" | "saving" | "exportPending">;
 type Props = {
   user: User;
@@ -28,6 +30,7 @@ const emptyDirectory: WorkspaceDirectoryData = {
   contacts: [],
   engagements: [],
   budgets: [],
+  materials: [],
   lastSync: "",
   pending: 0,
 };
@@ -82,11 +85,31 @@ export function BusinessWorkspace(props: Props) {
     );
   }
 
+  if (page === "procurement") {
+    return (
+      <ProcurementWorkspace
+        user={user}
+        repository={repository}
+        data={data}
+        locked={locked}
+        online={online}
+        onStatus={onStatus}
+      />
+    );
+  }
+
   return (
     <section
       className="mx-auto grid w-full max-w-7xl gap-5 px-4 py-6 sm:px-6 lg:px-8 lg:py-8"
       dir="rtl"
     >
+      <WorkspaceHeader
+        displayName={user.displayName}
+        lastSync={data.lastSync}
+        pending={data.pending}
+        locked={locked}
+        onSync={() => void directory.syncAgain()}
+      />
       <BusinessTabs
         tab={page}
         filter={view.filter}

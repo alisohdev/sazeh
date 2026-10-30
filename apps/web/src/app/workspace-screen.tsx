@@ -79,6 +79,10 @@ export function WorkspaceScreen(props: AppController) {
             element={<BusinessWorkspace {...businessProps} page="workforce" />}
           />
           <Route
+            path="procurement"
+            element={<BusinessWorkspace {...businessProps} page="procurement" />}
+          />
+          <Route
             path="account"
             element={
               <section className="mx-auto grid w-full max-w-3xl gap-4 px-4 py-6 sm:px-6 lg:py-8">

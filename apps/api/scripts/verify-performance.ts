@@ -60,7 +60,7 @@ async function main() {
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
     let childOutput = "";
-    server = spawn(process.execPath, ["--env-file=../../.env", "dist/main.js"], {
+    server = spawn(process.execPath, ["--env-file-if-exists=../../.env", "dist/main.js"], {
       cwd: resolve(root, "apps/api"),
       env: { ...process.env, API_PORT: String(port), AUTH_ALLOWED_ORIGIN: origin },
       stdio: ["ignore", "pipe", "pipe"],

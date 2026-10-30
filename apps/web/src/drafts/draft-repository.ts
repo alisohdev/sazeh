@@ -11,6 +11,11 @@ import {
   WorkforceFinalizeCommandSchema,
   WorkforceRecordInputSchema,
   WorkforceReverseCommandSchema,
+  MaterialInputSchema,
+  ProcurementDocumentInputSchema,
+  ProcurementFinalizeCommandSchema,
+  ProcurementReverseCommandSchema,
+  ProcurementSyncCommandSchema,
   type DraftCreateCommand,
   type DirectoryCommand,
   type DraftView,
@@ -19,6 +24,11 @@ import {
   type WorkforceFinalizeCommand,
   type WorkforceRecordInput,
   type WorkforceReverseCommand,
+  type MaterialInput,
+  type ProcurementDocumentInput,
+  type ProcurementFinalizeCommand,
+  type ProcurementReverseCommand,
+  type ProcurementSyncCommand,
 } from "@sazeh/contracts";
 import { ApiError, authClient } from "../identity/auth-client.js";
 import { workspaceControl } from "../identity/workspace-control.js";
@@ -42,7 +52,8 @@ type OutboxEntry = {
 };
 type SyncLease = { key: "sync"; owner: string; generation: number; expiresAt: number };
 type DirectoryType = "PROJECT" | "CONTACT" | "ENGAGEMENT" | "BUDGET";
-type DirectorySnapshotType = DirectoryType | "WORKFORCE_RECORD";
+type DirectorySnapshotType =
+  DirectoryType | "MATERIAL" | "WORKFORCE_RECORD" | "PROCUREMENT_DOCUMENT";
 type DirectoryRow = {
   id: string;
   type: DirectorySnapshotType;
@@ -100,6 +111,32 @@ type WorkforceOutbox = {
   retryAt: number;
   editRevision: number;
 };
+type ProcurementLocalStatus = WorkforceLocalStatus;
+type ProcurementDraft = {
+  id: string;
+  entityType: "MATERIAL" | "DOCUMENT";
+  data: MaterialInput | ProcurementDocumentInput;
+  version: number;
+  status: "DRAFT" | "FINALIZED" | "REVERSED";
+  syncState: ProcurementLocalStatus;
+  updatedAt: string;
+  editRevision: number;
+  problem?: string;
+  serverData?: Record<string, unknown>;
+};
+type ProcurementCommand =
+  ProcurementSyncCommand | ProcurementFinalizeCommand | ProcurementReverseCommand;
+type ProcurementOutbox = {
+  commandId: string;
+  recordId: string;
+  action: "UPSERT" | "LIFECYCLE" | "FINALIZE" | "REVERSE";
+  createdAt: string;
+  payload: ProcurementCommand;
+  dependencies: string[];
+  attempts: number;
+  retryAt: number;
+  editRevision: number;
+};
 
 class WorkspaceDatabase extends Dexie {
   drafts!: EntityTable<SavedDraft, "id">;
@@ -111,6 +148,8 @@ class WorkspaceDatabase extends Dexie {
   directoryCursors!: EntityTable<DirectoryCursor, "key">;
   workforceDrafts!: EntityTable<WorkforceDraft, "id">;
   workforceOutbox!: EntityTable<WorkforceOutbox, "commandId">;
+  procurementDrafts!: EntityTable<ProcurementDraft, "id">;
+  procurementOutbox!: EntityTable<ProcurementOutbox, "commandId">;
 
   constructor(name: string) {
     super(name);
@@ -149,6 +188,19 @@ class WorkspaceDatabase extends Dexie {
       directoryCursors: "&key",
       workforceDrafts: "&id,updatedAt,syncState,status",
       workforceOutbox: "&commandId,recordId,action,createdAt,retryAt",
+    });
+    this.version(5).stores({
+      drafts: "&id,projectId,savedAt,syncState",
+      outbox: "&commandId,entityId,createdAt,retryAt",
+      leases: "&key",
+      directorySnapshots: "&id,type,updatedAt",
+      directoryDrafts: "&id,type,syncState,updatedAt",
+      directoryOutbox: "&commandId,entityId,createdAt,retryAt",
+      directoryCursors: "&key",
+      workforceDrafts: "&id,updatedAt,syncState,status",
+      workforceOutbox: "&commandId,recordId,action,createdAt,retryAt",
+      procurementDrafts: "&id,entityType,updatedAt,syncState,status",
+      procurementOutbox: "&commandId,recordId,action,createdAt,retryAt",
     });
   }
 }
@@ -267,6 +319,57 @@ export function openDraftWorkspace(
     if (navigator.onLine) void repository.syncPending();
   }
 
+  async function queueProcurementAction(
+    id: string,
+    action: "FINALIZE" | "REVERSE",
+    expectedVersion: number,
+    reason?: string,
+  ): Promise<void> {
+    await withWorkspaceActivity("shared", async () => {
+      await requireCurrent();
+      const store = await db();
+      const current = await store.procurementDrafts.get(id);
+      if (!current || current.entityType !== "DOCUMENT" || current.version !== expectedVersion)
+        throw new Error("The procurement record changed. Refresh it before continuing.");
+      const previous = await store.procurementOutbox.where("recordId").equals(id).toArray();
+      if (previous.length)
+        throw new Error("This procurement record already has a pending command.");
+      if (action === "FINALIZE" && (current.status !== "DRAFT" || current.syncState !== "SYNCED"))
+        throw new Error("Only a synchronized server draft can be finalized online.");
+      if (action === "REVERSE" && current.status !== "FINALIZED")
+        throw new Error("Only a finalized procurement record can be reversed.");
+      const commandId = crypto.randomUUID();
+      const payload =
+        action === "FINALIZE"
+          ? ProcurementFinalizeCommandSchema.parse({ commandId, recordId: id, expectedVersion })
+          : ProcurementReverseCommandSchema.parse({
+              commandId,
+              recordId: id,
+              expectedVersion,
+              reason,
+            });
+      await store.transaction("rw", store.procurementDrafts, store.procurementOutbox, async () => {
+        await store.procurementOutbox.add({
+          commandId,
+          recordId: id,
+          action,
+          createdAt: new Date().toISOString(),
+          payload,
+          dependencies: [],
+          attempts: 0,
+          retryAt: 0,
+          editRevision: current.editRevision,
+        });
+        await store.procurementDrafts.put({
+          ...current,
+          syncState: action === "FINALIZE" ? "FINALIZE_PENDING" : "PENDING",
+        });
+      });
+    });
+    notify();
+    if (navigator.onLine) void repository.syncPending();
+  }
+
   const repository = {
     userId: user.id,
     user,
@@ -296,7 +399,8 @@ export function openDraftWorkspace(
       return (
         (await store.outbox.count()) +
         (await store.directoryOutbox.count()) +
-        (await store.workforceOutbox.count())
+        (await store.workforceOutbox.count()) +
+        (await store.procurementOutbox.count())
       );
     },
 
@@ -326,7 +430,7 @@ export function openDraftWorkspace(
       notify();
     },
 
-    async directoryItems(type?: DirectoryType): Promise<DirectoryDraft[]> {
+    async directoryItems(type?: DirectorySnapshotType): Promise<DirectoryDraft[]> {
       const store = await db();
       const snapshots = await store.directorySnapshots.toArray();
       const drafts = await store.directoryDrafts.toArray();
@@ -451,6 +555,212 @@ export function openDraftWorkspace(
     reverseWorkforce(id: string, expectedVersion: number, reason: string) {
       if (!navigator.onLine) throw new Error("Reversal requires an online connection.");
       return queueWorkforceAction(id, "REVERSE", expectedVersion, reason);
+    },
+
+    async procurementItems(entityType?: "MATERIAL" | "DOCUMENT"): Promise<ProcurementDraft[]> {
+      const store = await db();
+      const rows = await store.procurementDrafts.orderBy("updatedAt").reverse().toArray();
+      return entityType ? rows.filter((row) => row.entityType === entityType) : rows;
+    },
+
+    async saveMaterial(
+      input: MaterialInput,
+      existingId?: string,
+      serverVersion = 0,
+    ): Promise<string> {
+      return withWorkspaceActivity("shared", async () => {
+        await requireCurrent();
+        const normalized = MaterialInputSchema.parse(input);
+        const store = await db();
+        const id = existingId ?? crypto.randomUUID();
+        const current = await store.procurementDrafts.get(id);
+        const previous = await store.procurementOutbox.where("recordId").equals(id).toArray();
+        const replaceUnsent = previous.filter(
+          (entry) => entry.action === "UPSERT" && entry.attempts === 0,
+        );
+        const expectedVersion =
+          (current?.version ?? serverVersion) + previous.length - replaceUnsent.length;
+        const editRevision = (current?.editRevision ?? 0) + 1;
+        const createdAt = new Date().toISOString();
+        const payload = ProcurementSyncCommandSchema.parse({
+          commandType: "MATERIAL_UPSERT",
+          commandId: crypto.randomUUID(),
+          entityId: id,
+          expectedVersion,
+          input: normalized,
+        });
+        await store.transaction(
+          "rw",
+          store.procurementDrafts,
+          store.procurementOutbox,
+          async () => {
+            await store.procurementOutbox.bulkDelete(replaceUnsent.map((entry) => entry.commandId));
+            await store.procurementDrafts.put({
+              id,
+              entityType: "MATERIAL",
+              data: normalized,
+              version: current?.version ?? serverVersion,
+              status: "DRAFT",
+              syncState: "PENDING",
+              updatedAt: createdAt,
+              editRevision,
+            });
+            await store.procurementOutbox.add({
+              commandId: payload.commandId,
+              recordId: id,
+              action: "UPSERT",
+              createdAt,
+              payload,
+              dependencies: [],
+              attempts: 0,
+              retryAt: 0,
+              editRevision,
+            });
+          },
+        );
+        notify();
+        if (navigator.onLine) void repository.syncPending();
+        return id;
+      });
+    },
+
+    async setMaterialLifecycle(
+      id: string,
+      expectedVersion: number,
+      action: "ARCHIVE" | "REOPEN",
+      reason: string,
+    ) {
+      return withWorkspaceActivity("shared", async () => {
+        await requireCurrent();
+        const store = await db();
+        const current = await store.procurementDrafts.get(id);
+        if (current && current.version !== expectedVersion)
+          throw new Error("The material changed. Refresh it before continuing.");
+        const payload = ProcurementSyncCommandSchema.parse({
+          commandType: "MATERIAL_LIFECYCLE",
+          commandId: crypto.randomUUID(),
+          entityId: id,
+          expectedVersion,
+          action,
+          reason,
+        });
+        const editRevision = (current?.editRevision ?? 0) + 1;
+        const createdAt = new Date().toISOString();
+        await store.transaction(
+          "rw",
+          store.procurementDrafts,
+          store.procurementOutbox,
+          async () => {
+            await store.procurementOutbox.add({
+              commandId: payload.commandId,
+              recordId: id,
+              action: "LIFECYCLE",
+              createdAt,
+              payload,
+              dependencies: [],
+              attempts: 0,
+              retryAt: 0,
+              editRevision,
+            });
+            if (current)
+              await store.procurementDrafts.put({
+                ...current,
+                syncState: "PENDING",
+                editRevision,
+                updatedAt: createdAt,
+              });
+          },
+        );
+        notify();
+        if (navigator.onLine) void repository.syncPending();
+      });
+    },
+
+    async saveProcurement(
+      input: ProcurementDocumentInput,
+      existingId?: string,
+      serverVersion = 0,
+    ): Promise<string> {
+      return withWorkspaceActivity("shared", async () => {
+        await requireCurrent();
+        const normalized = ProcurementDocumentInputSchema.parse(input);
+        const store = await db();
+        const id = existingId ?? crypto.randomUUID();
+        const current = await store.procurementDrafts.get(id);
+        if (current?.status === "FINALIZED" || current?.status === "REVERSED")
+          throw new Error("Finalized procurement records cannot be edited.");
+        const previous = await store.procurementOutbox.where("recordId").equals(id).toArray();
+        const pendingDrafts = previous.filter((entry) => entry.action === "UPSERT");
+        const replaceUnsent = pendingDrafts.filter((entry) => entry.attempts === 0);
+        const expectedVersion =
+          (current?.version ?? serverVersion) + pendingDrafts.length - replaceUnsent.length;
+        const editRevision = (current?.editRevision ?? 0) + 1;
+        const createdAt = new Date().toISOString();
+        const materialIds =
+          "lines" in normalized
+            ? normalized.lines.flatMap((line) =>
+                "materialId" in line && typeof line.materialId === "string"
+                  ? [line.materialId]
+                  : [],
+              )
+            : [];
+        const dependencies = [] as string[];
+        for (const materialId of new Set(materialIds)) {
+          const material = await store.procurementDrafts.get(materialId);
+          if (material?.entityType === "MATERIAL" && material.version === 0)
+            dependencies.push(materialId);
+        }
+        const payload = ProcurementSyncCommandSchema.parse({
+          commandType: "DOCUMENT_UPSERT",
+          commandId: crypto.randomUUID(),
+          entityId: id,
+          expectedVersion,
+          dependencyIds: dependencies,
+          input: normalized,
+        });
+        await store.transaction(
+          "rw",
+          store.procurementDrafts,
+          store.procurementOutbox,
+          async () => {
+            await store.procurementOutbox.bulkDelete(replaceUnsent.map((entry) => entry.commandId));
+            await store.procurementDrafts.put({
+              id,
+              entityType: "DOCUMENT",
+              data: normalized,
+              version: current?.version ?? serverVersion,
+              status: "DRAFT",
+              syncState: "PENDING",
+              updatedAt: createdAt,
+              editRevision,
+            });
+            await store.procurementOutbox.add({
+              commandId: payload.commandId,
+              recordId: id,
+              action: "UPSERT",
+              createdAt,
+              payload,
+              dependencies,
+              attempts: 0,
+              retryAt: 0,
+              editRevision,
+            });
+          },
+        );
+        notify();
+        if (navigator.onLine) void repository.syncPending();
+        return id;
+      });
+    },
+
+    finalizeProcurement(id: string, expectedVersion: number) {
+      if (!navigator.onLine) throw new Error("Finalization requires an online connection.");
+      return queueProcurementAction(id, "FINALIZE", expectedVersion);
+    },
+
+    reverseProcurement(id: string, expectedVersion: number, reason: string) {
+      if (!navigator.onLine) throw new Error("Reversal requires an online connection.");
+      return queueProcurementAction(id, "REVERSE", expectedVersion, reason);
     },
 
     async saveDirectory(
@@ -630,7 +940,8 @@ export function openDraftWorkspace(
         return operation(
           (await store.outbox.count()) +
             (await store.directoryOutbox.count()) +
-            (await store.workforceOutbox.count()),
+            (await store.workforceOutbox.count()) +
+            (await store.procurementOutbox.count()),
         );
       });
     },
@@ -646,6 +957,7 @@ export function openDraftWorkspace(
           await runDirectorySync();
           await runSync();
           await runWorkforceSync();
+          await runProcurementSync();
         } while (syncRequested && !closed);
       })();
       syncFlight = run.finally(() => {
@@ -663,11 +975,20 @@ export function openDraftWorkspace(
       const commands = await store.outbox.orderBy("createdAt").toArray();
       const directoryCommands = await store.directoryOutbox.orderBy("createdAt").toArray();
       const workforceCommands = await store.workforceOutbox.orderBy("createdAt").toArray();
-      if (commands.length === 0 && directoryCommands.length === 0 && workforceCommands.length === 0)
+      const procurementCommands = await store.procurementOutbox.orderBy("createdAt").toArray();
+      if (
+        commands.length === 0 &&
+        directoryCommands.length === 0 &&
+        workforceCommands.length === 0 &&
+        procurementCommands.length === 0
+      )
         return undefined;
       const drafts = await Promise.all(commands.map((entry) => store.drafts.get(entry.entityId)));
       const workforceDrafts = await Promise.all(
         workforceCommands.map((entry) => store.workforceDrafts.get(entry.recordId)),
+      );
+      const procurementDrafts = await Promise.all(
+        procurementCommands.map((entry) => store.procurementDrafts.get(entry.recordId)),
       );
       return JSON.stringify(
         {
@@ -688,6 +1009,8 @@ export function openDraftWorkspace(
           directoryCommands,
           workforceDrafts: workforceDrafts.filter(Boolean),
           workforceCommands,
+          procurementDrafts: procurementDrafts.filter(Boolean),
+          procurementCommands,
         },
         null,
         2,
@@ -710,6 +1033,13 @@ export function openDraftWorkspace(
       await store.transaction("rw", store.workforceDrafts, store.workforceOutbox, async () => {
         await store.workforceOutbox.clear();
         await store.workforceDrafts.bulkDelete(workforceCommands.map((entry) => entry.recordId));
+      });
+      const procurementCommands = await store.procurementOutbox.toArray();
+      await store.transaction("rw", store.procurementDrafts, store.procurementOutbox, async () => {
+        await store.procurementOutbox.clear();
+        await store.procurementDrafts.bulkDelete(
+          procurementCommands.map((entry) => entry.recordId),
+        );
       });
       notify();
     },
@@ -1554,6 +1884,321 @@ export function openDraftWorkspace(
     }
   }
 
+  async function runProcurementSync(): Promise<void> {
+    const store = await db();
+    if (!(await canSync()) || !navigator.onLine) return;
+    const owner = crypto.randomUUID();
+    const lease = await store.transaction("rw", store.leases, async () => {
+      const current = await store.leases.get("sync");
+      if (current && current.expiresAt > Date.now()) return undefined;
+      const next = {
+        key: "sync" as const,
+        owner,
+        generation: (current?.generation ?? 0) + 1,
+        expiresAt: Date.now() + 30_000,
+      };
+      await store.leases.put(next);
+      return next;
+    });
+    if (!lease) return;
+    const controller = new AbortController();
+    let leaseLost = false;
+    activeRun = controller;
+    const renewal = window.setInterval(() => {
+      void store
+        .transaction("rw", store.leases, async () => {
+          const current = await store.leases.get("sync");
+          if (
+            !current ||
+            current.owner !== owner ||
+            current.generation !== lease.generation ||
+            current.expiresAt <= Date.now()
+          ) {
+            leaseLost = true;
+            controller.abort(new Error("Procurement synchronization lease was lost"));
+            return;
+          }
+          await store.leases.put({ ...current, expiresAt: Date.now() + 30_000 });
+        })
+        .catch(() => {
+          leaseLost = true;
+          controller.abort(new Error("Procurement synchronization lease renewal failed"));
+        });
+    }, 10_000);
+    try {
+      const entries = await store.procurementOutbox.orderBy("createdAt").toArray();
+      for (const entry of entries) {
+        if (
+          entry.retryAt > Date.now() ||
+          !(await canSync()) ||
+          !(await ownsLease(store, owner, lease.generation))
+        )
+          continue;
+        const draft = await store.procurementDrafts.get(entry.recordId);
+        if (!draft || draft.syncState === "CONFLICT" || draft.syncState === "VALIDATION_FAILED")
+          continue;
+        const dependenciesReady = await Promise.all(
+          entry.dependencies.map(async (id) => {
+            const dependency = await store.procurementDrafts.get(id);
+            return !dependency || dependency.version > 0 || dependency.syncState === "SYNCED";
+          }),
+        );
+        if (dependenciesReady.some((ready) => !ready)) continue;
+        await store.procurementOutbox.put({ ...entry, attempts: entry.attempts + 1 });
+        if (entry.action === "UPSERT" || entry.action === "LIFECYCLE")
+          await store.procurementDrafts.put({ ...draft, syncState: "SENDING" });
+        let response: Response;
+        try {
+          const path =
+            entry.action === "UPSERT" || entry.action === "LIFECYCLE"
+              ? "/api/v1/procurement/sync/commands"
+              : entry.action === "FINALIZE"
+                ? `/api/v1/procurement/drafts/${entry.recordId}/finalize`
+                : `/api/v1/procurement/records/${entry.recordId}/reverse`;
+          response = await authClient.requestForUser(
+            path,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(
+                entry.action === "UPSERT" || entry.action === "LIFECYCLE"
+                  ? [entry.payload]
+                  : entry.payload,
+              ),
+              signal: controller.signal,
+            },
+            user.id,
+          );
+        } catch (error) {
+          if (
+            controller.signal.aborted ||
+            leaseLost ||
+            !(await canSync()) ||
+            !(await ownsLease(store, owner, lease.generation))
+          )
+            return;
+          if (error instanceof ApiError && isAuthenticationCode(error.code)) {
+            await markProcurementAuthRequired(store);
+            await workspaceControl.pauseSync(user.id, epoch);
+            return;
+          }
+          await retryProcurementCommand(store, entry, owner, lease.generation);
+          continue;
+        }
+        if (
+          controller.signal.aborted ||
+          leaseLost ||
+          !(await canSync()) ||
+          !(await ownsLease(store, owner, lease.generation))
+        )
+          return;
+        const body = (await response.json().catch(() => ({}))) as {
+          results?: Array<{
+            ok: boolean;
+            result?: unknown;
+            status?: number;
+            error?: {
+              code?: string;
+              message?: string;
+              current?: Record<string, unknown>;
+              currentVersion?: number;
+            };
+          }>;
+          code?: string;
+          message?: string;
+          result?: unknown;
+          replayed?: boolean;
+          document?: Record<string, unknown>;
+          original?: Record<string, unknown>;
+        };
+        const batched = entry.action === "UPSERT" || entry.action === "LIFECYCLE";
+        const outcome = batched ? body.results?.[0] : undefined;
+        const status = outcome?.status ?? response.status;
+        if (
+          (response.status === 401 || response.status === 403) &&
+          (response.status === 401 || isAuthenticationCode(body.code ?? outcome?.error?.code ?? ""))
+        ) {
+          await markProcurementAuthRequired(store);
+          await workspaceControl.pauseSync(user.id, epoch);
+          return;
+        }
+        if (!response.ok || (batched && !outcome?.ok)) {
+          if (status === 409) {
+            await updateProcurementState(
+              store,
+              entry,
+              "CONFLICT",
+              "نسخه یا موجودی سرور تغییر کرده است؛ پیش‌نویس را بازبینی کنید.",
+              owner,
+              lease.generation,
+              outcome?.error?.current,
+              outcome?.error?.currentVersion,
+            );
+          } else if (status === 400 || status === 422) {
+            await updateProcurementState(
+              store,
+              entry,
+              "VALIDATION_FAILED",
+              outcome?.error?.message ?? body.message ?? "اطلاعات پیش‌نویس نیازمند اصلاح است.",
+              owner,
+              lease.generation,
+            );
+          } else {
+            await retryProcurementCommand(store, entry, owner, lease.generation);
+          }
+          notify();
+          continue;
+        }
+        let result = batched ? outcome?.result : body;
+        if (result && typeof result === "object" && "result" in result && "replayed" in result)
+          result = (result as { result: unknown }).result;
+        let acknowledged = result as Record<string, unknown> | undefined;
+        if (entry.action === "FINALIZE" && acknowledged?.document)
+          acknowledged = acknowledged.document as Record<string, unknown>;
+        if (entry.action === "REVERSE" && acknowledged?.original)
+          acknowledged = acknowledged.original as Record<string, unknown>;
+        await store.transaction(
+          "rw",
+          store.procurementDrafts,
+          store.procurementOutbox,
+          store.leases,
+          async () => {
+            const currentLease = await store.leases.get("sync");
+            if (
+              currentLease?.owner !== owner ||
+              currentLease.generation !== lease.generation ||
+              currentLease.expiresAt <= Date.now()
+            )
+              return;
+            await store.procurementOutbox.delete(entry.commandId);
+            const latest = await store.procurementDrafts.get(entry.recordId);
+            if (!latest) return;
+            const pending = await store.procurementOutbox
+              .where("recordId")
+              .equals(entry.recordId)
+              .toArray();
+            const version = Number(acknowledged?.version ?? latest.version);
+            const syncState: ProcurementLocalStatus =
+              entry.action === "FINALIZE"
+                ? "FINALIZED"
+                : entry.action === "REVERSE"
+                  ? "REVERSED"
+                  : pending.length
+                    ? "PENDING"
+                    : "SYNCED";
+            const updated: ProcurementDraft = {
+              ...latest,
+              version,
+              status:
+                entry.action === "FINALIZE"
+                  ? "FINALIZED"
+                  : entry.action === "REVERSE"
+                    ? "REVERSED"
+                    : latest.status,
+              syncState:
+                latest.editRevision === entry.editRevision || entry.action !== "UPSERT"
+                  ? syncState
+                  : "PENDING",
+              ...(acknowledged ? { serverData: acknowledged } : {}),
+            };
+            delete updated.problem;
+            await store.procurementDrafts.put(updated);
+          },
+        );
+        notify();
+      }
+    } finally {
+      window.clearInterval(renewal);
+      if (activeRun === controller) activeRun = undefined;
+      await store
+        .transaction("rw", store.leases, async () => {
+          const current = await store.leases.get("sync");
+          if (current?.owner === owner && current.generation === lease.generation)
+            await store.leases.put({ ...current, owner: "", expiresAt: 0 });
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  async function retryProcurementCommand(
+    store: WorkspaceDatabase,
+    entry: ProcurementOutbox,
+    owner: string,
+    generation: number,
+  ) {
+    await store.transaction(
+      "rw",
+      store.procurementDrafts,
+      store.procurementOutbox,
+      store.leases,
+      async () => {
+        const lease = await store.leases.get("sync");
+        if (
+          lease?.owner !== owner ||
+          lease.generation !== generation ||
+          lease.expiresAt <= Date.now()
+        )
+          return;
+        await store.procurementOutbox.update(entry.commandId, {
+          retryAt: Date.now() + Math.min(60_000, 2_000 * 2 ** Math.min(entry.attempts, 5)),
+        });
+        const latest = await store.procurementDrafts.get(entry.recordId);
+        if (!latest || latest.editRevision !== entry.editRevision) return;
+        await store.procurementDrafts.put({
+          ...latest,
+          syncState: entry.action === "FINALIZE" ? "FINALIZE_PENDING" : "RETRY_PENDING",
+          problem: "اتصال برقرار نشد؛ درخواست با همان شناسه دوباره فرستاده می‌شود.",
+        });
+      },
+    );
+    notify();
+  }
+
+  async function updateProcurementState(
+    store: WorkspaceDatabase,
+    entry: ProcurementOutbox,
+    state: ProcurementLocalStatus,
+    problem: string,
+    owner: string,
+    generation: number,
+    current?: Record<string, unknown>,
+    currentVersion?: number,
+  ) {
+    await store.transaction("rw", store.procurementDrafts, store.leases, async () => {
+      const lease = await store.leases.get("sync");
+      if (
+        lease?.owner !== owner ||
+        lease.generation !== generation ||
+        lease.expiresAt <= Date.now()
+      )
+        return;
+      const draft = await store.procurementDrafts.get(entry.recordId);
+      if (!draft) return;
+      await store.procurementDrafts.put({
+        ...draft,
+        ...(currentVersion ? { version: currentVersion } : {}),
+        ...(current ? { serverData: current } : {}),
+        syncState: state,
+        problem,
+      });
+    });
+  }
+
+  async function markProcurementAuthRequired(store: WorkspaceDatabase) {
+    await store.transaction("rw", store.procurementDrafts, store.procurementOutbox, async () => {
+      const entries = await store.procurementOutbox.toArray();
+      await Promise.all(
+        entries.map((entry) =>
+          store.procurementDrafts.update(entry.recordId, {
+            syncState: "AUTH_REQUIRED",
+            problem: "برای ادامهٔ همگام‌سازی دوباره وارد شوید.",
+          }),
+        ),
+      );
+    });
+    notify();
+  }
+
   async function retryWorkforceCommand(
     store: WorkspaceDatabase,
     entry: WorkforceOutbox,
@@ -1662,6 +2307,7 @@ export function openDraftWorkspace(
       const entries = await store.outbox.toArray();
       const directoryEntries = await store.directoryOutbox.toArray();
       const workforceEntries = await store.workforceOutbox.toArray();
+      const procurementEntries = await store.procurementOutbox.toArray();
       const now = Date.now();
       const lease = await store.leases.get("sync");
       const leaseReadyAt = lease && lease.expiresAt > now ? lease.expiresAt : now;
@@ -1687,6 +2333,13 @@ export function openDraftWorkspace(
       }
       for (const entry of workforceEntries) {
         const draft = await store.workforceDrafts.get(entry.recordId);
+        if (!draft || draft.syncState === "CONFLICT" || draft.syncState === "VALIDATION_FAILED")
+          continue;
+        const retryReadyAt = entry.retryAt > now ? entry.retryAt : now;
+        earliest = Math.min(earliest, Math.max(retryReadyAt, leaseReadyAt));
+      }
+      for (const entry of procurementEntries) {
+        const draft = await store.procurementDrafts.get(entry.recordId);
         if (!draft || draft.syncState === "CONFLICT" || draft.syncState === "VALIDATION_FAILED")
           continue;
         const retryReadyAt = entry.retryAt > now ? entry.retryAt : now;

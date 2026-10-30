@@ -285,7 +285,8 @@ async function signIn(page: Page, username: string, password: string) {
   await page.getByLabel("گذرواژه", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود", exact: true }).click();
   expect((await loginResponse).status()).toBe(200);
-  await expect(page.getByRole("heading", { name: "پروژه‌ها و فهرست‌ها" })).toBeVisible();
+  await page.getByRole("link", { name: "کارکرد و پرداخت", exact: true }).click();
+  await expect(page.locator("#workforce-heading")).toBeVisible();
 }
 
 function waitForStatementReport(

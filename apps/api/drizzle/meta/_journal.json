@@ -64,6 +64,13 @@
       "when": 1793352000000,
       "tag": "0008_project_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793357521170,
+      "tag": "0009_m3_procurement_inventory",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ const navigation = [
   { to: "/people", label: "افراد و تأمین‌کنندگان" },
   { to: "/engagements", label: "همکاری‌ها" },
   { to: "/workforce", label: "کارکرد و پرداخت" },
+  { to: "/procurement", label: "خرید و موجودی" },
   { to: "/account", label: "حساب کاربری" },
 ];
 

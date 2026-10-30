@@ -197,7 +197,7 @@ export const DirectoryAcknowledgementSchema = z.object({
   replayed: z.boolean(),
 });
 export const DirectoryBootstrapItemSchema = z.object({
-  entityType: z.enum(["PROJECT", "CONTACT", "ENGAGEMENT", "BUDGET"]),
+  entityType: z.enum(["PROJECT", "CONTACT", "ENGAGEMENT", "BUDGET", "MATERIAL"]),
   entity: z.record(z.string(), z.unknown()),
 });
 export const DirectoryBootstrapSchema = z.object({
@@ -211,7 +211,15 @@ export const DirectoryChangesSchema = z.object({
   changes: z.array(
     z.object({
       revision: z.number().int().positive(),
-      entityType: z.enum(["PROJECT", "CONTACT", "ENGAGEMENT", "BUDGET", "WORKFORCE_RECORD"]),
+      entityType: z.enum([
+        "PROJECT",
+        "CONTACT",
+        "ENGAGEMENT",
+        "BUDGET",
+        "MATERIAL",
+        "WORKFORCE_RECORD",
+        "PROCUREMENT_DOCUMENT",
+      ]),
       entityId: UuidSchema,
       snapshot: z.record(z.string(), z.unknown()),
     }),
@@ -356,6 +364,164 @@ export type WorkforceFinalizeCommand = z.infer<typeof WorkforceFinalizeCommandSc
 export type WorkforceReverseCommand = z.infer<typeof WorkforceReverseCommandSchema>;
 export type WorkforceRecord = z.infer<typeof WorkforceRecordSchema>;
 export type WorkforceReportFilter = z.infer<typeof WorkforceReportFilterSchema>;
+
+const ProcurementQuantitySchema = z
+  .string()
+  .max(19)
+  .regex(/^(0|[1-9][0-9]*)(\.[0-9]{1,3})?$/, "Use up to three decimal places")
+  .refine((value) => (value.split(".")[0]?.length ?? 0) <= 15, "Quantity is too large")
+  .refine((value) => /[1-9]/.test(value), "Quantity must be greater than zero");
+const ProcurementMoneySchema = TomanSchema.max(24);
+const ProcurementTextSchema = z.string().trim().min(1).max(1000);
+
+export const MaterialInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(160),
+    baseUnit: z.string().trim().min(1).max(40),
+  })
+  .strict();
+export const MaterialSchema = MaterialInputSchema.extend({
+  id: UuidSchema,
+  archived: z.boolean(),
+  version: z.number().int().positive(),
+  createdAt: z.iso.datetime().optional(),
+  updatedAt: z.iso.datetime().optional(),
+});
+
+const ProcurementBaseSchema = z.object({
+  projectId: UuidSchema,
+  businessDate: DateOnlySchema,
+  description: ProcurementTextSchema,
+});
+const MaterialQuantityLineSchema = z
+  .object({ id: UuidSchema, materialId: UuidSchema, quantity: ProcurementQuantitySchema })
+  .strict();
+const SourceQuantityLineSchema = z
+  .object({ id: UuidSchema, sourceLineId: UuidSchema, quantity: ProcurementQuantitySchema })
+  .strict();
+const InvoiceLineInputSchema = MaterialQuantityLineSchema.extend({
+  unitPriceToman: ProcurementMoneySchema.refine((value) => value !== "0", "Price must be positive"),
+}).strict();
+const ReceiptLineInputSchema = z
+  .object({ id: UuidSchema, invoiceLineId: UuidSchema, quantity: ProcurementQuantitySchema })
+  .strict();
+const PaymentAllocationInputSchema = z
+  .object({
+    invoiceId: UuidSchema,
+    amountToman: ProcurementMoneySchema.refine(
+      (value) => value !== "0",
+      "Allocation must be positive",
+    ),
+  })
+  .strict();
+
+export const ProcurementDocumentInputSchema = z.discriminatedUnion("kind", [
+  ProcurementBaseSchema.extend({
+    kind: z.literal("PURCHASE_INVOICE"),
+    supplierId: UuidSchema,
+    receiveAllNow: z.boolean().default(false),
+    lines: z.array(InvoiceLineInputSchema).min(1).max(100),
+  }).strict(),
+  ProcurementBaseSchema.extend({
+    kind: z.literal("SUPPLIER_PAYMENT"),
+    supplierId: UuidSchema,
+    amountToman: ProcurementMoneySchema.refine((value) => value !== "0", "Amount must be positive"),
+    allocations: z.array(PaymentAllocationInputSchema).max(100).default([]),
+  }).strict(),
+  ProcurementBaseSchema.extend({
+    kind: z.literal("STOCK_RECEIPT"),
+    supplierId: UuidSchema,
+    invoiceId: UuidSchema,
+    lines: z.array(ReceiptLineInputSchema).min(1).max(100),
+  }).strict(),
+  ProcurementBaseSchema.extend({
+    kind: z.literal("STOCK_ISSUE"),
+    lines: z.array(MaterialQuantityLineSchema).min(1).max(100),
+  }).strict(),
+  ProcurementBaseSchema.extend({
+    kind: z.literal("STOCK_TRANSFER"),
+    destinationProjectId: UuidSchema,
+    lines: z.array(MaterialQuantityLineSchema).min(1).max(100),
+  })
+    .strict()
+    .refine((value) => value.projectId !== value.destinationProjectId, {
+      path: ["destinationProjectId"],
+      message: "Transfer destination must differ from its source",
+    }),
+  ProcurementBaseSchema.extend({
+    kind: z.literal("STOCK_RETURN"),
+    sourceDocumentId: UuidSchema,
+    lines: z.array(SourceQuantityLineSchema).min(1).max(100),
+  }).strict(),
+  ProcurementBaseSchema.extend({
+    kind: z.literal("SUPPLIER_RETURN"),
+    supplierId: UuidSchema,
+    sourceDocumentId: UuidSchema,
+    lines: z.array(SourceQuantityLineSchema).min(1).max(100),
+  }).strict(),
+]);
+
+const ProcurementDocumentCommandSchema = z
+  .object({
+    commandType: z.literal("DOCUMENT_UPSERT"),
+    commandId: UuidSchema,
+    entityId: UuidSchema,
+    expectedVersion: z.number().int().nonnegative(),
+    dependencyIds: z.array(UuidSchema).max(100).default([]),
+    input: ProcurementDocumentInputSchema,
+  })
+  .strict();
+const MaterialUpsertCommandSchema = z
+  .object({
+    commandType: z.literal("MATERIAL_UPSERT"),
+    commandId: UuidSchema,
+    entityId: UuidSchema,
+    expectedVersion: z.number().int().nonnegative(),
+    input: MaterialInputSchema,
+  })
+  .strict();
+const MaterialLifecycleCommandSchema = z
+  .object({
+    commandType: z.literal("MATERIAL_LIFECYCLE"),
+    commandId: UuidSchema,
+    entityId: UuidSchema,
+    expectedVersion: z.number().int().positive(),
+    action: z.enum(["ARCHIVE", "REOPEN"]),
+    reason: ProcurementTextSchema,
+  })
+  .strict();
+export const ProcurementSyncCommandSchema = z.discriminatedUnion("commandType", [
+  ProcurementDocumentCommandSchema,
+  MaterialUpsertCommandSchema,
+  MaterialLifecycleCommandSchema,
+]);
+export const ProcurementFinalizeCommandSchema = z
+  .object({
+    commandId: UuidSchema,
+    recordId: UuidSchema,
+    expectedVersion: z.number().int().positive(),
+  })
+  .strict();
+export const ProcurementReverseCommandSchema = ProcurementFinalizeCommandSchema.extend({
+  reason: ProcurementTextSchema,
+}).strict();
+export const ProcurementReportFilterSchema = z
+  .object({
+    projectId: UuidSchema.optional(),
+    supplierId: UuidSchema.optional(),
+    materialId: UuidSchema.optional(),
+    from: DateOnlySchema.optional(),
+    to: DateOnlySchema.optional(),
+  })
+  .strict();
+
+export type MaterialInput = z.infer<typeof MaterialInputSchema>;
+export type Material = z.infer<typeof MaterialSchema>;
+export type ProcurementDocumentInput = z.infer<typeof ProcurementDocumentInputSchema>;
+export type ProcurementSyncCommand = z.infer<typeof ProcurementSyncCommandSchema>;
+export type ProcurementFinalizeCommand = z.infer<typeof ProcurementFinalizeCommandSchema>;
+export type ProcurementReverseCommand = z.infer<typeof ProcurementReverseCommandSchema>;
+export type ProcurementReportFilter = z.infer<typeof ProcurementReportFilterSchema>;
 
 export const TemporaryCredentialSchema = z
   .object({

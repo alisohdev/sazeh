@@ -19,6 +19,7 @@ export type WorkspaceDirectoryData = {
   contacts: DirectoryRecord[];
   engagements: DirectoryRecord[];
   budgets: DirectoryRecord[];
+  materials: DirectoryRecord[];
   lastSync: string;
   pending: number;
 };

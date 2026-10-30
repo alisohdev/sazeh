@@ -14,8 +14,6 @@ type Props = {
   projectName: (id: unknown) => string;
   onSave: (form: FormData, row?: DirectoryRecord) => Promise<DirectorySaveResult>;
   onClear: () => void;
-  onKeepServer: (row: DirectoryRecord) => void;
-  onRevise: (row: DirectoryRecord) => void;
 };
 
 export function EngagementSection(props: Props) {
@@ -38,8 +36,6 @@ export function EngagementSection(props: Props) {
             row={row}
             workerName={props.workerName}
             projectName={props.projectName}
-            onKeepServer={props.onKeepServer}
-            onRevise={props.onRevise}
           />
         ))}
         {props.rows.length === 0 && (

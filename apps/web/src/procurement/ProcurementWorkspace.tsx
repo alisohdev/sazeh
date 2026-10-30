@@ -1,23 +1,18 @@
 import { useReducer } from "react";
 import type { ProcurementDocumentInput, User } from "@sazeh/contracts";
-import type { DraftWorkspace } from "../drafts/draft-repository";
+import type { WorkspaceRepository } from "@/data/workspace-repository";
 import type { WorkspaceDirectoryData } from "../business/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { MaterialDirectory } from "./components/MaterialDirectory";
 import { ProcurementEntryForm } from "./components/ProcurementEntryForm";
 import { ProcurementReportView } from "./components/ProcurementReportView";
 import { inputFromRecord } from "./record-input";
-import type {
-  MaterialView,
-  ProcurementFilter,
-  ProcurementLocalDraft,
-  ProcurementRecord,
-} from "./types";
+import type { MaterialView, ProcurementFilter, ProcurementRecord } from "./types";
 import { useProcurement } from "./useProcurement";
 
 type Props = {
   user: User;
-  repository: DraftWorkspace;
+  repository: WorkspaceRepository;
   data: WorkspaceDirectoryData;
   locked: boolean;
   online: boolean;
@@ -55,30 +50,21 @@ export function ProcurementWorkspace({ user, repository, data, locked, online, o
   const suppliers = data.contacts.filter(
     (row) => row.data.isSupplier === true && row.data.archived !== true,
   );
-  const materials = mergeMaterials(data.materials, procurement.localDrafts);
+  const materials = materialViews(data.materials);
 
   async function save(input: ProcurementDocumentInput, id?: string, version?: number) {
     const saved = await procurement.saveDocument(input, id, version);
-    onStatus("پیش‌نویس خرید یا موجودی روی دستگاه ذخیره شد.");
+    onStatus("پیش‌نویس خرید یا موجودی روی سرور ثبت شد.");
     return saved;
   }
-  function editLocal(draft: ProcurementLocalDraft) {
-    if (draft.entityType !== "DOCUMENT" || !("kind" in draft.data)) return;
-    dispatch({ type: "edit", value: { id: draft.id, version: draft.version, input: draft.data } });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
   function editRecord(record: ProcurementRecord) {
-    const local = procurement.localDrafts.find((draft) => draft.id === record.id);
-    if (local) editLocal(local);
-    else
-      dispatch({
-        type: "edit",
-        value: { id: record.id, version: record.version, input: inputFromRecord(record) },
-      });
+    dispatch({
+      type: "edit",
+      value: { id: record.id, version: record.version, input: inputFromRecord(record) },
+    });
   }
   function reviewReady(record: ProcurementRecord) {
-    const local = procurement.localDrafts.find((draft) => draft.id === record.id);
-    return online && local?.status === "DRAFT" && local.syncState === "SYNCED";
+    return online && record.status === "DRAFT";
   }
   async function finalize(record: ProcurementRecord) {
     await procurement.finalize(record.id, record.version);
@@ -124,7 +110,7 @@ export function ProcurementWorkspace({ user, repository, data, locked, online, o
             initial={state.editing?.input}
             recordId={state.editing?.id}
             version={state.editing?.version}
-            locked={locked}
+            locked={locked || !online}
             onSave={save}
             onSaved={() => {
               dispatch({ type: "reset" });
@@ -135,7 +121,7 @@ export function ProcurementWorkspace({ user, repository, data, locked, online, o
         <TabsContent value="materials">
           <MaterialDirectory
             materials={materials}
-            locked={locked}
+            locked={locked || !online}
             onSave={procurement.saveMaterial}
             onLifecycle={procurement.setMaterialLifecycle}
           />
@@ -147,7 +133,6 @@ export function ProcurementWorkspace({ user, repository, data, locked, online, o
             suppliers={data.contacts.filter((row) => row.data.isSupplier === true)}
             materials={materials}
             report={procurement.report}
-            localDrafts={procurement.localDrafts}
             loading={procurement.loading}
             error={procurement.error}
             drillDownIds={state.drillDownIds}
@@ -156,7 +141,6 @@ export function ProcurementWorkspace({ user, repository, data, locked, online, o
             onFinalize={finalize}
             onReverse={reverse}
             onEditRecord={editRecord}
-            onEditLocal={editLocal}
             reviewReady={reviewReady}
           />
         </TabsContent>
@@ -165,32 +149,14 @@ export function ProcurementWorkspace({ user, repository, data, locked, online, o
   );
 }
 
-function mergeMaterials(
-  serverRows: WorkspaceDirectoryData["materials"],
-  localDrafts: ProcurementLocalDraft[],
-): MaterialView[] {
-  const merged = new Map<string, MaterialView>(
-    serverRows.map((row) => [
-      row.id,
-      {
-        id: row.id,
-        name: String(row.data.name ?? ""),
-        baseUnit: String(row.data.baseUnit ?? ""),
-        archived: row.data.archived === true,
-        version: row.version,
-        syncState: row.syncState,
-      },
-    ]),
-  );
-  for (const draft of localDrafts)
-    if (draft.entityType === "MATERIAL" && "name" in draft.data)
-      merged.set(draft.id, {
-        id: draft.id,
-        name: draft.data.name,
-        baseUnit: draft.data.baseUnit,
-        archived: Boolean(draft.serverData?.archived),
-        version: draft.version,
-        syncState: draft.syncState,
-      });
-  return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name, "fa"));
+function materialViews(rows: WorkspaceDirectoryData["materials"]): MaterialView[] {
+  return rows
+    .map((row) => ({
+      id: row.id,
+      name: String(row.data.name),
+      baseUnit: String(row.data.baseUnit),
+      archived: row.data.archived === true,
+      version: row.version,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "fa"));
 }

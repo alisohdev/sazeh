@@ -12,8 +12,6 @@ type Props = {
   onClear: () => void;
   onEdit: (row: DirectoryRecord) => void;
   onLifecycle: (row: DirectoryRecord) => void;
-  onKeepServer: (row: DirectoryRecord) => void;
-  onRevise: (row: DirectoryRecord) => void;
 };
 
 export function ContactSection(props: Props) {
@@ -36,8 +34,6 @@ export function ContactSection(props: Props) {
             }
             onEdit={props.onEdit}
             onLifecycle={props.onLifecycle}
-            onKeepServer={props.onKeepServer}
-            onRevise={props.onRevise}
           />
         ))}
         {props.rows.length === 0 && (

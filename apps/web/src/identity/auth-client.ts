@@ -1,5 +1,5 @@
 import { SessionResponseSchema, type SessionResponse, type User } from "@sazeh/contracts";
-import { workspaceControl } from "./workspace-control.js";
+import { errorMessage } from "../lib/error-message";
 
 export class ApiError extends Error {
   constructor(
@@ -7,97 +7,79 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
   ) {
-    super(message);
+    super(errorMessage({ code, message }, status));
   }
 }
-
 let accessToken: string | undefined;
 let accessExpiresAt = 0;
 let sessionUser: User | undefined;
 let csrfValue: string | undefined;
 let refreshInFlight: Promise<SessionResponse> | undefined;
-
+let generation = 0;
+const listeners = new Set<() => void>();
+const channel =
+  typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("sazeh-session");
+channel?.addEventListener("message", () => {
+  sessionStorage.setItem("sazeh-signed-out", "true");
+  clearSession();
+});
+function clearSession() {
+  generation++;
+  accessToken = undefined;
+  accessExpiresAt = 0;
+  sessionUser = undefined;
+  for (const listener of listeners) listener();
+}
+function accept(result: SessionResponse, expectedGeneration: number) {
+  if (generation !== expectedGeneration)
+    throw new ApiError("نشست تغییر کرده است؛ دوباره وارد شوید.", 401, "SESSION_CHANGED");
+  accessToken = result.accessToken;
+  accessExpiresAt = result.expiresAt;
+  sessionUser = result.user;
+  sessionStorage.removeItem("sazeh-signed-out");
+  return result;
+}
 export const authClient = {
-  async csrf(): Promise<void> {
+  subscribe(listener: () => void) {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  },
+  async csrf() {
     if (csrfValue) return;
-    const response = await fetch("/api/v1/auth/csrf", {
+    const response = await localizedFetch("/api/v1/auth/csrf", {
       credentials: "include",
       cache: "no-store",
     });
     if (!response.ok) throw await apiError(response);
-    const body = (await response.json()) as { csrfToken?: unknown };
-    if (typeof body.csrfToken !== "string")
-      throw new Error("The server did not return a request token.");
+    const body = await response.json();
+    if (typeof body.csrfToken !== "string") throw new Error("توکن درخواست دریافت نشد.");
     csrfValue = body.csrfToken;
   },
-
-  async login(username: string, password: string): Promise<SessionResponse> {
-    return workspaceControl.withLifecycleLock(async (signal) => {
-      const state = await workspaceControl.state();
-      if (state.phase !== "signed-out") {
-        throw new ApiError(
-          "Leave the current browser workspace before signing in.",
-          409,
-          "ACCOUNT_SWITCH_REQUIRED",
-        );
-      }
-      await this.csrf();
-      const response = await send("/api/v1/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ username, password }),
-        signal,
-      });
-      const result = SessionResponseSchema.parse(await jsonOrError(response));
-      try {
-        await acceptSession(result);
-      } catch (error) {
-        await this.logoutLocked(signal, result.accessToken);
-        throw error;
-      }
-      return result;
+  async login(username: string, password: string) {
+    const current = ++generation;
+    const response = await send("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
     });
+    const grant = accept(SessionResponseSchema.parse(await jsonOrError(response)), current);
+    channel?.postMessage("account-changed");
+    return grant;
   },
-
   async refresh(): Promise<SessionResponse> {
     if (refreshInFlight) return refreshInFlight;
-    let refreshOwner: { userId: string; epoch: number } | undefined;
-    refreshInFlight = workspaceControl
-      .withLifecycleLock(async (signal) => {
-        const state = await workspaceControl.state();
-        if (state.phase === "active" && state.user)
-          refreshOwner = { userId: state.user.id, epoch: state.epoch };
-        if (state.syncAuthentication === "required")
-          throw new ApiError("Sign in again to resume synchronization.", 401, "AUTH_REQUIRED");
-        if (state.phase === "departing" || state.phase === "logout-pending") {
-          throw new ApiError(
-            "Finish signing out before refreshing the session.",
-            401,
-            "AUTH_REQUIRED",
-          );
-        }
-        await this.csrf();
-        const response = await send("/api/v1/auth/refresh", { method: "POST", body: "{}", signal });
-        const result = SessionResponseSchema.parse(await jsonOrError(response));
-        try {
-          await acceptSession(result);
-        } catch (error) {
-          await this.logoutLocked(signal, result.accessToken);
-          throw error;
-        }
-        return result;
-      })
-      .catch(async (error: unknown) => {
-        if (error instanceof ApiError && error.status === 401) {
-          clearMemory();
-          const state = await workspaceControl.state();
-          if (
-            state.phase === "active" &&
-            state.user &&
-            refreshOwner?.userId === state.user.id &&
-            refreshOwner.epoch === state.epoch
-          )
-            await workspaceControl.pauseSync(state.user.id, state.epoch);
-        }
+    const current = generation;
+    const refresh = async () => {
+      const response = await send("/api/v1/auth/refresh", { method: "POST", body: "{}" });
+      return accept(SessionResponseSchema.parse(await jsonOrError(response)), current);
+    };
+    refreshInFlight = (
+      navigator.locks ? navigator.locks.request("sazeh-session-refresh", refresh) : refresh()
+    )
+      .catch((error) => {
+        if (error instanceof ApiError && error.status === 401 && current === generation)
+          clearSession();
         throw error;
       })
       .finally(() => {
@@ -105,147 +87,68 @@ export const authClient = {
       });
     return refreshInFlight;
   },
-
-  async restore(): Promise<SessionResponse> {
-    const state = await workspaceControl.state();
-    if (state.phase === "signed-out" && state.explicitLoginRequired) {
-      clearMemory();
-      throw new ApiError("Enter your credentials to continue.", 401, "AUTH_REQUIRED");
-    }
-    try {
-      return await this.refresh();
-    } catch (error) {
-      clearMemory();
-      throw error;
-    }
+  async restore() {
+    if (sessionStorage.getItem("sazeh-signed-out"))
+      throw new ApiError("دوباره وارد شوید.", 401, "AUTH_REQUIRED");
+    return this.refresh();
   },
-
-  async tokenForSync(expectedUserId?: string): Promise<string> {
-    await requireSyncAuthentication();
-    if (!accessToken || accessExpiresAt <= Date.now() + 30_000) {
-      await requireSyncAuthentication();
-      const grant = await this.refresh();
-      if (expectedUserId && grant.user.id !== expectedUserId) {
-        throw new ApiError(
-          "The browser account changed. This draft was not sent.",
-          401,
-          "ACCOUNT_SWITCHED",
-        );
-      }
-    }
-    if (!accessToken)
-      throw new ApiError("Sign in again to synchronize drafts.", 401, "AUTH_REQUIRED");
-    if (expectedUserId && sessionUser?.id !== expectedUserId) {
-      throw new ApiError(
-        "The browser account changed. This draft was not sent.",
-        401,
-        "ACCOUNT_SWITCHED",
-      );
-    }
+  async token(userId?: string) {
+    if (!accessToken || accessExpiresAt <= Date.now() + 30_000) await this.refresh();
+    if (!accessToken || (userId && sessionUser?.id !== userId))
+      throw new ApiError("حساب تغییر کرده است؛ دوباره وارد شوید.", 401, "ACCOUNT_CHANGED");
     return accessToken;
   },
-
   async request(path: string, init: RequestInit = {}, authenticated = true): Promise<Response> {
-    const expectedUserId = sessionUser?.id;
-    let token = authenticated ? await this.tokenForSync(expectedUserId) : undefined;
-    let response = await send(path, init, token);
-    if (authenticated && response.status === 401) {
-      const problem = (await response
-        .clone()
-        .json()
-        .catch(() => undefined)) as { code?: string } | undefined;
-      if (problem?.code === "ACCOUNT_DISABLED" || problem?.code === "SESSION_REVOKED") {
-        clearMemory();
-        throw new ApiError("Your session is no longer active.", 401, problem.code);
-      }
-      await requireSyncAuthentication();
-      const grant = await this.refresh();
-      if (expectedUserId && grant.user.id !== expectedUserId) {
-        throw new ApiError("The browser account changed. Sign in again.", 401, "ACCOUNT_SWITCHED");
-      }
-      token = grant.accessToken;
-      response = await send(path, init, token);
-    }
-    return response;
+    return authenticated ? this.requestForUser(path, init, sessionUser?.id) : send(path, init);
   },
-
-  async requestForUser(path: string, init: RequestInit, userId: string): Promise<Response> {
-    let token = await this.tokenForSync(userId);
-    let response = await send(path, init, token);
-    if (response.status === 401) {
-      const problem = (await response
-        .clone()
-        .json()
-        .catch(() => undefined)) as { code?: string } | undefined;
-      if (problem?.code === "ACCOUNT_DISABLED" || problem?.code === "SESSION_REVOKED") {
-        clearMemory();
-        throw new ApiError("Your session is no longer active.", 401, problem.code);
-      }
-      await requireSyncAuthentication();
-      const grant = await this.refresh();
-      if (grant.user.id !== userId)
-        throw new ApiError(
-          "The browser account changed. This draft was not sent.",
-          401,
-          "ACCOUNT_SWITCHED",
-        );
-      token = grant.accessToken;
-      response = await send(path, init, token);
+  async requestForUser(path: string, init: RequestInit, userId?: string): Promise<Response> {
+    if (!navigator.onLine)
+      throw new Error("برای ادامه به اینترنت متصل شوید. هیچ تغییری ذخیره نشده است.");
+    const expected = userId ?? sessionUser?.id;
+    const current = generation;
+    const response = await send(path, init, await this.token(expected));
+    if (current !== generation) throw new ApiError("نشست تغییر کرده است.", 401, "SESSION_CHANGED");
+    if (response.status !== 401) return response;
+    const problem = await response
+      .clone()
+      .json()
+      .catch(() => ({}));
+    if (["ACCOUNT_DISABLED", "SESSION_REVOKED"].includes(problem.code)) {
+      clearSession();
+      throw await apiError(response);
     }
-    return response;
+    await this.refresh();
+    const retry = await send(path, init, await this.token(expected));
+    if (current !== generation) throw new ApiError("نشست تغییر کرده است.", 401, "SESSION_CHANGED");
+    if (retry.status === 401) {
+      clearSession();
+      throw await apiError(retry);
+    }
+    return retry;
   },
-
-  async currentUser(): Promise<User | undefined> {
-    if (!accessToken || accessExpiresAt <= Date.now()) return undefined;
+  async currentUser() {
     return sessionUser;
   },
-
-  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await workspaceControl.withLifecycleLock(async (signal) => {
-      if (!accessToken || accessExpiresAt <= Date.now()) {
-        throw new ApiError("Sign in again before changing the password.", 401, "AUTH_REQUIRED");
-      }
-      const currentUserId = sessionUser?.id;
-      if (!currentUserId) throw new ApiError("Sign in again.", 401, "AUTH_REQUIRED");
-      const response = await send(
-        "/api/v1/auth/password",
-        {
-          method: "POST",
-          body: JSON.stringify({ currentPassword, newPassword }),
-          signal,
-        },
-        accessToken,
-      );
-      await jsonOrError(response);
-      await workspaceControl.completePasswordChange(currentUserId);
-      clearMemory();
-    });
-  },
-
-  async logout(): Promise<void> {
-    await workspaceControl.withLifecycleLock(async (signal) => {
-      await this.logoutLocked(signal);
-    });
-  },
-
-  async logoutLocked(signal: AbortSignal, token = accessToken): Promise<void> {
-    const usableToken = token === accessToken ? accessExpiresAt > Date.now() : Boolean(token);
-    await this.csrf();
-    const response = await send(
-      "/api/v1/auth/logout",
-      { method: "POST", body: "{}", signal },
-      usableToken ? token : undefined,
+  async changePassword(currentPassword: string, newPassword: string) {
+    await jsonOrError(
+      await this.request("/api/v1/auth/password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      }),
     );
-    if (!response.ok && response.status !== 204) throw await apiError(response);
-    if (response.headers.get("x-session-mismatch") === "true") {
-      await workspaceControl.requireExplicitLogin();
-    }
-    clearMemory();
+    sessionStorage.setItem("sazeh-signed-out", "true");
+    clearSession();
+    channel?.postMessage("password-changed");
   },
-
-  clear(): void {
-    clearMemory();
+  async logout() {
+    await jsonOrError(
+      await send("/api/v1/auth/logout", { method: "POST", body: "{}" }, accessToken),
+    );
+    sessionStorage.setItem("sazeh-signed-out", "true");
+    clearSession();
+    channel?.postMessage("logout");
   },
+  clear: clearSession,
 };
 
 async function send(path: string, init: RequestInit, token?: string): Promise<Response> {
@@ -257,7 +160,12 @@ async function send(path: string, init: RequestInit, token?: string): Promise<Re
     await authClient.csrf();
     if (csrfValue) headers.set("x-csrf-token", csrfValue);
   }
-  let response = await fetch(path, { ...init, headers, credentials: "include", cache: "no-store" });
+  let response = await localizedFetch(path, {
+    ...init,
+    headers,
+    credentials: "include",
+    cache: "no-store",
+  });
   if (response.status === 403) {
     const problem = (await response
       .clone()
@@ -267,7 +175,12 @@ async function send(path: string, init: RequestInit, token?: string): Promise<Re
       csrfValue = undefined;
       await authClient.csrf();
       if (csrfValue) headers.set("x-csrf-token", csrfValue);
-      response = await fetch(path, { ...init, headers, credentials: "include", cache: "no-store" });
+      response = await localizedFetch(path, {
+        ...init,
+        headers,
+        credentials: "include",
+        cache: "no-store",
+      });
     }
   }
   return response;
@@ -289,32 +202,10 @@ async function apiError(response: Response): Promise<ApiError> {
   );
 }
 
-function remember(result: SessionResponse): void {
-  accessToken = result.accessToken;
-  accessExpiresAt = result.expiresAt;
-  sessionUser = result.user;
-}
-
-async function acceptSession(result: SessionResponse): Promise<void> {
-  const state = await workspaceControl.state();
-  if (state.phase === "departing" || state.phase === "logout-pending") {
-    throw new ApiError("The current workspace is signing out.", 409, "ACCOUNT_SWITCH_REQUIRED");
+async function localizedFetch(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(path, init);
+  } catch {
+    throw new ApiError("", 0, "NETWORK_ERROR");
   }
-  if (state.phase === "active" && state.user?.id !== result.user.id) {
-    throw new ApiError("The browser account changed. Sign in again.", 401, "ACCOUNT_SWITCHED");
-  }
-  await workspaceControl.activate(result.user);
-  remember(result);
-}
-
-function clearMemory(): void {
-  accessToken = undefined;
-  accessExpiresAt = 0;
-  sessionUser = undefined;
-}
-
-async function requireSyncAuthentication() {
-  const state = await workspaceControl.state();
-  if (state.syncAuthentication === "required")
-    throw new ApiError("Sign in again to resume synchronization.", 401, "AUTH_REQUIRED");
 }

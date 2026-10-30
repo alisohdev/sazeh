@@ -21,7 +21,7 @@ Superuser has every business permission plus account administration. All admins 
 | FR09 | Owner receipts | Track contract amendments, progress claims, approved claim amounts and owner payments. Distinguish unapproved claims, approved revenue, receipts and remaining receivables. |
 | FR10 | Reports | Project overview, worker statement, supplier statement, cash flow, budget vs cost, purchases, inventory and approved claims vs costs. Filter by project/date/contact as relevant. |
 | FR11 | Evidence | Attach receipt images, PDFs and contracts; private access, mobile camera/gallery selection, upload status and retry. |
-| FR12 | Offline | Previously opened workspaces available offline; create/edit local drafts and attachments; sync when online and app active, then finalize after validation. |
+| FR12 | Online saving | All saves and file uploads require a server connection and confirmation. Failed requests remain visible; no browser queue or automatic replay. |
 | FR13 | Corrections | Draft editing allowed; finalized records have linked corrections/reversals with reason and author. No silent deletion. |
 
 ## Simple business rules
@@ -34,40 +34,38 @@ Superuser has every business permission plus account administration. All admins 
 - Purchase invoices create supplier liability. Receiving creates stock. Consumption creates material cost. Payment settles liability. These events must not double-count one another.
 - A purchase form can offer “receive all now” as a convenience, creating linked invoice and receipt atomically. Separate partial deliveries remain supported.
 - Approved claims determine management earned-revenue reporting; paid receipts determine cash flow. Contract value alone is never earned revenue.
-- All finalized operations are server-authoritative. Local reports show last-sync timestamp and pending entries separately, never silently incorporating unfinalized amounts.
+- All finalized operations are server-authoritative. Reports identify their server timestamp and separate pending server drafts from finalized amounts.
 
 ## Screens and mobile behavior
 
 1. Login, first-password change, own-password change; superuser account management.
-2. Dashboard: project cards, liabilities, cash summaries and visible pending-sync count.
+2. Project list: project cards, search and modal creation. Financial analytics have a separate page.
 3. Project detail with overview, workers, purchases, stock, expenses, claims/receipts and files.
 4. Worker and supplier directories; contact statements with project/date filters.
 5. Short forms for earning, payment, deduction, invoice, receipt, consumption, transfer and return. Use expandable detail rather than wide desktop-only forms.
 6. Reports with readable mobile cards, drill-down entries, CSV and print layouts.
-7. Sync center: pending drafts, uploads, validation errors and conflicts, plus retry/review actions.
+7. Dedicated analytics page with project/date filters, charts, CSV and print.
 8. Audit history on each finalized record.
 
-Use clear Persian labels: «ذخیره روی دستگاه»، «در انتظار همگام‌سازی»، «پیش‌نویس ذخیره‌شده»، «ثبت نهایی»، «نیازمند بررسی». Saving locally is not server confirmation. Navigation works at 360 px with no page-wide horizontal overflow; dense tables have a mobile equivalent. Self-host Persian fonts, accessible labels, keyboard support and visible focus.
+Use clear Persian labels for server saving, errors, drafts and finalization. A save is successful only after server acknowledgment. Navigation works at 360 px with no page-wide horizontal overflow.
 
-## Offline boundaries and data lifecycle
+## Online data lifecycle
 
-An initial online login and successful workspace download are required. New devices cannot log in offline. Authentication/account operations, finalization and authoritative financial reports require a server connection. Capture drafts on a trusted device after a prior login; never describe this as verified offline authentication.
-
-Background synchronization while closed is best-effort only. Automatic foreground retry, reopen retry and a manual sync button are required. Storage failures must be visible. Browser eviction, clearing site data or losing the device can destroy unsynced work; request persistent storage and provide draft export. Never promise local storage is a backup.
+Authentication, reads, saves and attachment uploads require a server connection. No offline storage, outbox, service-worker application cache or background synchronization is supported. Unsaved form content is temporary and disappears when leaving or reloading the page. Server financial drafts remain editable until explicit finalization.
 
 Financial completion requires pending-draft, stock and balance checks, implemented with the source modules. M1b supports active -> archived -> active only, with required archive/reopen reasons. Archive hides default active lists and does not certify financial completion. Archiving projects/contacts preserves history and existing assignments; block new assignments to archived records. Engagement periods for the same worker/project cannot overlap (inclusive ends, empty end ongoing); workers may span projects. M1b budget categories are editable labels. Materials arrive in M3; earnings/calculations in M2.
 
-M1b project information includes defined counts, filters and drill-down. Labor analytics arrive in M2, procurement/stock in M3 and combined financial reports in M4. Financial charts require authoritative source data; synthetic demos must not invent financial metrics.
+Financial charts use authoritative server source data. Synthetic demos must not invent financial metrics.
 
 ## Success and nonfunctional acceptance
 
 - All numeric fixtures in specs/ACCEPTANCE.md reconcile exactly with underlying finalized records.
 - Five concurrent admin sessions and ten active projects complete entry/reporting without duplicate effects or lost updates.
-- Standard cached application navigation stays usable offline. A local draft survives ordinary refresh/restart after a successful IndexedDB write.
+- A failed save shows an error and retains the current form. Reconnecting or reloading never replays an unsaved request.
 - Proposed performance gate: warmed API p95 under 1 second for ordinary list/write actions and under 3 seconds for reports at the documented test dataset, excluding uploads and external network latency. Record cold starts and actual-device timings separately.
-- Authentication checks apply to every protected endpoint. Account disabling revokes online access, including synchronization; it cannot remotely erase an offline device.
+- Authentication checks apply to every protected endpoint. Account disabling revokes online access, including all reads and writes.
 - Backup restoration, migration rehearsal, attachment access checks, error visibility and user acceptance are production release gates.
 
 ## Exclusions
 
-No multi-company SaaS, worker login, statutory accounting/tax filing, automatic payroll deductions, native mobile apps, offline finalization, automated OCR, bank/payment-gateway integration, cheque management, procurement approvals, central warehouse, multi-currency or automatic unit conversion. These exclusions keep the selected workflows understandable; they do not waive reliability requirements.
+No multi-company SaaS, worker login, statutory accounting/tax filing, automatic payroll deductions, native mobile apps, offline data entry, automated OCR, bank/payment-gateway integration, cheque management, procurement approvals, central warehouse, multi-currency or automatic unit conversion. These exclusions keep the selected workflows understandable; they do not waive reliability requirements.

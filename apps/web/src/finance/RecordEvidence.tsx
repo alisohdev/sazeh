@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
-import type { DraftWorkspace } from "@/drafts/draft-repository";
+import type { WorkspaceRepository } from "@/data/workspace-repository";
 import { EvidenceControl } from "./EvidenceControl";
-export const EvidenceRepository = createContext<DraftWorkspace | null>(null);
+export const EvidenceRepository = createContext<WorkspaceRepository | null>(null);
 export function RecordEvidence({
   recordId,
   parentType,

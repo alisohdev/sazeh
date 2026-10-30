@@ -1,136 +1,100 @@
-import { useCallback, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DirectoryCommand } from "@sazeh/contracts";
 import type { User } from "@sazeh/contracts";
-import type { DraftWorkspace } from "../drafts/draft-repository";
+import type { WorkspaceRepository } from "../data/workspace-repository";
 import { contactPayload, engagementPayload, projectPayload, budgetPayload } from "./forms";
-import type {
-  DirectoryKind,
-  DirectoryRecord,
-  DirectorySaveResult,
-  WorkspaceDirectoryData,
-} from "./types";
+import type { DirectoryRecord, DirectorySaveResult } from "./types";
 
-type Props = {
+export function useBusinessDirectory({
+  user,
+  repository,
+  onStatus,
+}: {
   user: User;
-  repository: DraftWorkspace;
+  repository: WorkspaceRepository;
   onStatus: (message: string) => void;
-};
-
-export function useBusinessDirectory({ user, repository, onStatus }: Props) {
-  const queryClient = useQueryClient();
-  const queryKey = useMemo(() => ["business-directory", user.id] as const, [user.id]);
-  const loadDirectory = useCallback(async (): Promise<WorkspaceDirectoryData> => {
-    const [projects, contacts, engagements, budgets, materials, lastSync, pending] =
-      await Promise.all([
-        repository.directoryItems("PROJECT"),
-        repository.directoryItems("CONTACT"),
-        repository.directoryItems("ENGAGEMENT"),
-        repository.directoryItems("BUDGET"),
-        repository.directoryItems("MATERIAL"),
-        repository.lastDirectorySync(),
-        repository.pendingCount(),
-      ]);
-    return {
-      projects: projects as DirectoryRecord[],
-      contacts: contacts as DirectoryRecord[],
-      engagements: engagements as DirectoryRecord[],
-      budgets: budgets as DirectoryRecord[],
-      materials: materials as DirectoryRecord[],
-      lastSync: lastSync ?? "",
-      pending,
-    };
-  }, [repository]);
-  const refreshDirectory = useCallback(async () => {
-    queryClient.setQueryData(queryKey, await loadDirectory());
-  }, [loadDirectory, queryClient, queryKey]);
+}) {
+  const client = useQueryClient();
+  const key = ["business-directory", user.id];
   const query = useQuery({
-    queryKey,
-    staleTime: Number.POSITIVE_INFINITY,
-    queryFn: loadDirectory,
+    queryKey: key,
+    queryFn: () => repository.loadDirectory(),
+    retry: false,
   });
-
-  useEffect(
-    () =>
-      repository.subscribe(() => {
-        void refreshDirectory();
-      }),
-    [refreshDirectory, repository],
-  );
-
+  async function refresh() {
+    await client.invalidateQueries({ queryKey: key });
+  }
   async function save(
-    type: Exclude<DirectoryKind, "BUDGET">,
+    type: "PROJECT" | "CONTACT" | "ENGAGEMENT",
     form: FormData,
     current?: DirectoryRecord,
     budgetId?: string,
   ): Promise<DirectorySaveResult> {
     try {
+      const budget = type === "PROJECT" ? budgetPayload(form) : undefined;
       const payload =
         type === "PROJECT"
-          ? projectPayload(form)
+          ? {
+              ...projectPayload(form),
+              ...(budget?.category
+                ? {
+                    budget: {
+                      ...budget,
+                      id: budgetId ?? crypto.randomUUID(),
+                      expectedVersion:
+                        query.data?.budgets.find((row) => row.id === budgetId)?.version ?? 0,
+                    },
+                  }
+                : {}),
+            }
           : type === "CONTACT"
             ? contactPayload(form)
             : engagementPayload(form);
-      const kind = commandKind(type, current ? "update" : "create");
-      const id = await repository.saveDirectory(type, kind, payload, current?.id);
-      if (type === "PROJECT") {
-        const budget = budgetPayload(form);
-        if (budget.category) {
-          await repository.saveDirectory(
-            "BUDGET",
-            "BUDGET_SET",
-            { projectId: id, ...budget },
-            budgetId,
-          );
-        }
-      }
-      await refreshDirectory();
-      onStatus("روی دستگاه ذخیره شد؛ همگام‌سازی در حال انجام است.");
-      if (navigator.onLine) await repository.syncPending();
-      await refreshDirectory();
+      const kinds = {
+        PROJECT: ["PROJECT_CREATE", "PROJECT_UPDATE"],
+        CONTACT: ["CONTACT_CREATE", "CONTACT_UPDATE"],
+        ENGAGEMENT: ["ENGAGEMENT_CREATE", "ENGAGEMENT_UPDATE"],
+      } as const;
+      await repository.saveDirectory(
+        type,
+        kinds[type][current ? 1 : 0],
+        payload,
+        current?.id,
+        current?.version ?? 0,
+      );
+      await refresh();
+      onStatus("اطلاعات روی سرور ثبت شد.");
       return { ok: true };
     } catch (error) {
       const message = saveErrorMessage(error);
       onStatus(message);
+      await refresh();
       return { ok: false, error: message };
     }
   }
-
   async function setLifecycle(row: DirectoryRecord, type: "PROJECT" | "CONTACT") {
-    const isArchived = type === "PROJECT" ? row.data.lifecycle === "ARCHIVED" : row.data.archived;
-    const action = isArchived ? "REOPEN" : "ARCHIVE";
-    const reason = window
-      .prompt(action === "ARCHIVE" ? "دلیل بایگانی" : "دلیل بازگشایی", "")
-      ?.trim();
+    const archived = type === "PROJECT" ? row.data.lifecycle === "ARCHIVED" : row.data.archived;
+    const reason = window.prompt(archived ? "دلیل بازگشایی" : "دلیل بایگانی")?.trim();
     if (!reason) return;
-    await repository.saveDirectory(
-      type,
-      type === "PROJECT" ? "PROJECT_LIFECYCLE" : "CONTACT_LIFECYCLE",
-      { action, reason },
-      row.id,
-    );
-    await refreshDirectory();
-    onStatus("درخواست با دلیل ثبت شد.");
+    try {
+      await repository.saveDirectory(
+        type,
+        type === "PROJECT" ? "PROJECT_LIFECYCLE" : "CONTACT_LIFECYCLE",
+        { action: archived ? "REOPEN" : "ARCHIVE", reason },
+        row.id,
+        row.version,
+      );
+      await refresh();
+    } catch (error) {
+      onStatus(saveErrorMessage(error));
+    }
   }
-
-  async function keepServer(row: DirectoryRecord) {
-    await repository.keepServerDirectory(row.id);
-    await refreshDirectory();
-    onStatus("نسخهٔ سرور پذیرفته شد.");
-  }
-
-  async function syncAgain() {
-    await repository.syncPending();
-    await refreshDirectory();
-  }
-
   return {
     data: query.data,
     isLoading: query.isLoading,
+    error: query.error,
     save,
     setLifecycle,
-    keepServer,
-    syncAgain,
+    refresh,
   };
 }
 
@@ -152,16 +116,4 @@ function saveErrorMessage(error: unknown) {
   return error instanceof Error && error.message
     ? error.message
     : "ذخیره انجام نشد. اطلاعات فرم را بررسی کنید.";
-}
-
-function commandKind(type: Exclude<DirectoryKind, "BUDGET">, mode: "create" | "update") {
-  const commands = {
-    PROJECT: { create: "PROJECT_CREATE", update: "PROJECT_UPDATE" },
-    CONTACT: { create: "CONTACT_CREATE", update: "CONTACT_UPDATE" },
-    ENGAGEMENT: { create: "ENGAGEMENT_CREATE", update: "ENGAGEMENT_UPDATE" },
-  } as const satisfies Record<
-    Exclude<DirectoryKind, "BUDGET">,
-    Record<string, DirectoryCommand["kind"]>
-  >;
-  return commands[type][mode];
 }

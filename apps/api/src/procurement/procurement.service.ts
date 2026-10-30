@@ -12,15 +12,13 @@ import {
   MaterialInputSchema,
   ProcurementDocumentInputSchema,
   ProcurementReportFilterSchema,
-  ProcurementSyncCommandSchema,
   type ProcurementDocumentInput,
   type ProcurementFinalizeCommand,
   type ProcurementReportFilter,
   type ProcurementReverseCommand,
-  type ProcurementSyncCommand,
+  type ProcurementSaveCommand,
 } from "@sazeh/contracts";
 import { and, asc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
-import { ZodError } from "zod";
 import { DATABASE, type Database } from "../db/database.module.js";
 import {
   businessAudit,
@@ -33,8 +31,6 @@ import {
   stockBalances,
   stockMovements,
   supplierPaymentAllocations,
-  syncChanges,
-  syncRevision,
 } from "../db/schema.js";
 import { claimsFor, requireLiveSession, type Principal } from "../identity/identity.service.js";
 import {
@@ -67,25 +63,6 @@ const canonicalJson = (value: unknown): string => {
 @Injectable()
 export class ProcurementService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
-
-  async sync(principal: Principal, commands: unknown[]) {
-    if (commands.length > 100)
-      throw new BadRequestException({
-        code: "BATCH_TOO_LARGE",
-        message: "At most 100 procurement commands may be synchronized at once",
-      });
-    const results = [];
-    for (const raw of commands) {
-      try {
-        const command = ProcurementSyncCommandSchema.parse(raw);
-        const result = await this.applySyncCommand(principal, command);
-        results.push({ ok: true, result });
-      } catch (error) {
-        results.push({ ok: false, status: statusOf(error), error: problemOf(error) });
-      }
-    }
-    return { results };
-  }
 
   async materials(archived?: boolean) {
     return this.db
@@ -382,7 +359,7 @@ export class ProcurementService {
     };
   }
 
-  private async applySyncCommand(principal: Principal, command: ProcurementSyncCommand) {
+  async save(principal: Principal, command: ProcurementSaveCommand) {
     if (command.commandType === "DOCUMENT_UPSERT") return this.writeDocument(principal, command);
     return this.writeMaterial(principal, command);
   }
@@ -390,7 +367,7 @@ export class ProcurementService {
   private async writeMaterial(
     principal: Principal,
     command: Extract<
-      ProcurementSyncCommand,
+      ProcurementSaveCommand,
       { commandType: "MATERIAL_UPSERT" | "MATERIAL_LIFECYCLE" }
     >,
   ) {
@@ -464,7 +441,7 @@ export class ProcurementService {
 
   private async writeDocument(
     principal: Principal,
-    command: Extract<ProcurementSyncCommand, { commandType: "DOCUMENT_UPSERT" }>,
+    command: Extract<ProcurementSaveCommand, { commandType: "DOCUMENT_UPSERT" }>,
   ) {
     const input = ProcurementDocumentInputSchema.parse(command.input);
     return this.withReceipt(principal, command.commandId, command, async (tx) => {
@@ -1411,19 +1388,6 @@ export class ProcurementService {
       beforeValue: before,
       afterValue: after,
     });
-    const [next] = await tx
-      .update(syncRevision)
-      .set({ revision: sql`${syncRevision.revision} + 1` })
-      .where(eq(syncRevision.singleton, 1))
-      .returning();
-    if (!next) throw new Error("Sync revision row is missing");
-    await tx.insert(syncChanges).values({
-      revision: next.revision,
-      entityType,
-      entityId,
-      snapshot: after,
-      actorUserId: actor.userId,
-    });
   }
 
   private async withReceipt<T>(
@@ -1583,34 +1547,4 @@ function aggregateConsumptionTrend(
   return [...rows.values()]
     .sort((a, b) => a.businessDate.localeCompare(b.businessDate))
     .map(({ cost, ...row }) => ({ ...row, costToman: cost.toString() }));
-}
-
-function statusOf(error: unknown): number {
-  if (error instanceof ZodError || error instanceof BadRequestException) return 400;
-  if (error instanceof ConflictException) return 409;
-  if (error instanceof NotFoundException) return 404;
-  if (error instanceof ForbiddenException) return 403;
-  return 500;
-}
-
-function problemOf(error: unknown) {
-  if (error instanceof ZodError)
-    return {
-      code: "INVALID_PROCUREMENT_DRAFT",
-      message: "Procurement draft is invalid",
-      fieldErrors: Object.fromEntries(
-        error.issues.map((issue) => [issue.path.join("."), issue.message]),
-      ),
-    };
-  if (
-    error &&
-    typeof error === "object" &&
-    "getResponse" in error &&
-    typeof error.getResponse === "function"
-  )
-    return error.getResponse();
-  return {
-    code: "PROCUREMENT_COMMAND_FAILED",
-    message: "Procurement command could not be synchronized",
-  };
 }

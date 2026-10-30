@@ -13,9 +13,9 @@ import {
 } from "@nestjs/common";
 import {
   ContactInputSchema,
-  DirectoryCommandSchema,
   EngagementInputSchema,
   ProjectInputSchema,
+  ProjectBudgetEditSchema,
 } from "@sazeh/contracts";
 import type { AuthenticatedRequest } from "../identity/access.guard.js";
 import { DirectoryService } from "./directory.service.js";
@@ -37,12 +37,14 @@ export class DirectoriesController {
   @Post("projects")
   createProject(@Body() body: unknown, @Req() req: AuthenticatedRequest) {
     const payload = record(body);
-    return this.directory.write(
+    const budget = projectBudget(payload);
+    return this.directory.writeProject(
       principal(req),
       "PROJECT_CREATE",
       uuid(),
       0,
       parse(ProjectInputSchema, payload),
+      budget,
     );
   }
 
@@ -56,12 +58,14 @@ export class DirectoriesController {
     const value = record(body);
     const expectedVersion = version(value);
     delete value.expectedVersion;
-    return this.directory.write(
+    const budget = projectBudget(value);
+    return this.directory.writeProject(
       principal(req),
       "PROJECT_UPDATE",
       id,
       expectedVersion,
       parse(ProjectInputSchema, value),
+      budget,
     );
   }
 
@@ -198,57 +202,6 @@ export class DirectoriesController {
       }),
     );
   }
-
-  @Post("sync/commands")
-  async commands(@Body() body: unknown, @Req() req: AuthenticatedRequest) {
-    if (!Array.isArray(body) || body.length > 100)
-      throw new BadRequestException({
-        code: "INVALID_COMMANDS",
-        message: "Expected at most 100 directory commands",
-      });
-    const results = [];
-    for (const entry of body) {
-      try {
-        results.push({
-          ok: true,
-          result: await this.directory.command(principal(req), DirectoryCommandSchema.parse(entry)),
-        });
-      } catch (error) {
-        results.push({
-          ok: false,
-          commandId:
-            typeof entry === "object" && entry && "commandId" in entry ? entry.commandId : null,
-          status: status(error),
-          error: problem(error),
-        });
-      }
-    }
-    return { results };
-  }
-
-  @Get("sync/bootstrap")
-  bootstrap(
-    @Query("snapshotId") snapshotId?: string,
-    @Query("after") after?: string,
-    @Query("limit") limit = "100",
-  ) {
-    if (!/^\d+$/.test(limit) || (after && !snapshotId))
-      throw new BadRequestException({
-        code: "INVALID_BOOTSTRAP_CURSOR",
-        message: "Bootstrap page parameters are invalid",
-      });
-    return this.directory.bootstrap(snapshotId, after, Math.min(200, Math.max(1, Number(limit))));
-  }
-
-  @Get("sync/changes")
-  changes(@Query("cursor") cursor = "0", @Query("limit") limit = "100") {
-    if (!/^\d+$/.test(cursor) || !/^\d+$/.test(limit))
-      throw new BadRequestException({
-        code: "INVALID_CURSOR",
-        message: "Cursor and limit must be integers",
-      });
-    return this.directory.changes(Number(cursor), Math.min(200, Math.max(1, Number(limit))));
-  }
 }
 
 function parse<T extends { parse(input: unknown): unknown }>(
@@ -268,6 +221,15 @@ function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new BadRequestException({ code: "INVALID_BODY", message: "Expected an object" });
   return { ...(value as Record<string, unknown>) };
+}
+function projectBudget(value: Record<string, unknown>) {
+  const raw = value.budget;
+  delete value.budget;
+  if (raw === undefined) return undefined;
+  const budget = ProjectBudgetEditSchema.safeParse(raw);
+  if (!budget.success)
+    throw new BadRequestException({ code: "INVALID_BUDGET", message: "Project budget is invalid" });
+  return budget.data;
 }
 function version(value: Record<string, unknown>) {
   if (!Number.isSafeInteger(value.expectedVersion) || Number(value.expectedVersion) < 0)
@@ -292,14 +254,4 @@ function principal(req: AuthenticatedRequest) {
 }
 function uuid() {
   return crypto.randomUUID();
-}
-function status(error: unknown) {
-  return typeof error === "object" && error && "getStatus" in error
-    ? (error as { getStatus(): number }).getStatus()
-    : 422;
-}
-function problem(error: unknown) {
-  return typeof error === "object" && error && "getResponse" in error
-    ? (error as { getResponse(): unknown }).getResponse()
-    : { code: "INVALID_COMMAND", message: "Command could not be applied" };
 }

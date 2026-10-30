@@ -13,15 +13,12 @@ import {
   authenticatedReceipts,
   businessAudit,
   contacts,
-  directoryReceipts,
   engagements,
   noteDrafts,
   projectBudgets,
   projects,
   refreshTokens,
   sessions,
-  syncChanges,
-  syncRevision,
   users,
   workforceRecords,
   workforceReceipts,
@@ -1153,7 +1150,7 @@ async function main(): Promise<void> {
     assert.equal(
       archivedQueuedOwnerAssignment.status,
       409,
-      "queued project updates cannot assign a new owner to an archived project",
+      "online project updates cannot assign a new owner to an archived project",
     );
     const archivedProjectAfterOwnerUpdate = (await (
       await adminA.request(`/api/v1/projects/${project.id}`)
@@ -1218,7 +1215,7 @@ async function main(): Promise<void> {
     assert.equal(
       archivedProjectCreate.status,
       409,
-      "queued creates cannot assign to archived projects",
+      "online creates cannot assign to archived projects",
     );
     const archivedProjectUpdate = await submitDirectoryCommand(adminA, {
       commandId: randomUUID(),
@@ -1230,20 +1227,8 @@ async function main(): Promise<void> {
     assert.equal(
       archivedProjectUpdate.status,
       409,
-      "queued edits cannot assign to archived projects",
+      "online edits cannot assign to archived projects",
     );
-    const bootstrap = await adminA.request("/api/v1/sync/bootstrap?limit=1");
-    assert.equal(bootstrap.status, 200);
-    let bootstrapBody = (await bootstrap.json()) as {
-      snapshotId: string;
-      cursor: string;
-      items: Array<{ entityType: string; entity: { id: string } }>;
-      nextCursor: string | null;
-    };
-    const bootstrapSnapshotId = bootstrapBody.snapshotId;
-    const bootstrapRevision = bootstrapBody.cursor;
-    const snapshotEntities = [...bootstrapBody.items];
-    assert.equal(snapshotEntities.length, 1, "bootstrap page honors its bounded row limit");
     const afterSnapshotProjectResponse = await adminA.request("/api/v1/projects", {
       method: "POST",
       body: JSON.stringify({
@@ -1255,7 +1240,6 @@ async function main(): Promise<void> {
       }),
     });
     assert.equal(afterSnapshotProjectResponse.status, 201);
-    const afterSnapshotProject = (await afterSnapshotProjectResponse.json()) as { id: string };
     const firstProjectPage = (await (await adminA.request("/api/v1/projects?limit=1")).json()) as {
       items: Array<{ id: string }>;
       nextCursor: string | null;
@@ -1270,73 +1254,6 @@ async function main(): Promise<void> {
     assert.equal(secondProjectPage.items.length, 1);
     assert.notEqual(firstProjectPage.items[0]?.id, secondProjectPage.items[0]?.id);
     assert.equal((await adminA.request("/api/v1/projects?limit=0")).status, 400);
-    while (bootstrapBody.nextCursor) {
-      const nextPage = await adminA.request(
-        `/api/v1/sync/bootstrap?snapshotId=${encodeURIComponent(bootstrapSnapshotId)}&after=${encodeURIComponent(bootstrapBody.nextCursor)}&limit=1`,
-      );
-      assert.equal(nextPage.status, 200);
-      bootstrapBody = (await nextPage.json()) as typeof bootstrapBody;
-      assert.equal(bootstrapBody.snapshotId, bootstrapSnapshotId);
-      assert.equal(bootstrapBody.cursor, bootstrapRevision);
-      snapshotEntities.push(...bootstrapBody.items);
-    }
-    assert.equal(
-      snapshotEntities.some((row) => row.entity.id === afterSnapshotProject.id),
-      false,
-      "all pages retain the original repeatable-read snapshot across a later commit",
-    );
-    assert.equal(
-      new Set(snapshotEntities.map((row) => `${row.entityType}:${row.entity.id}`)).size,
-      snapshotEntities.length,
-      "bootstrap pagination returns each record once",
-    );
-    assert(
-      snapshotEntities.some((row) => row.entityType === "PROJECT" && row.entity.id === project.id),
-      "consistent bootstrap pages contain project rows from one snapshot",
-    );
-    const recoveredChanges = await adminA.request(
-      `/api/v1/sync/changes?cursor=${encodeURIComponent(bootstrapRevision)}&limit=200`,
-    );
-    const recoveredBody = (await recoveredChanges.json()) as {
-      changes: Array<{ entityId: string }>;
-      highWatermark: string;
-    };
-    assert(
-      recoveredBody.changes.some((change) => change.entityId === afterSnapshotProject.id),
-      "a commit after bootstrap is recovered from its cursor",
-    );
-    const changes = await adminA.request(`/api/v1/sync/changes?cursor=0&limit=200`);
-    const changesBody = (await changes.json()) as { changes: Array<{ entityId: string }> };
-    assert(
-      changesBody.changes.some((change) => change.entityId === project.id),
-      "change feed includes committed project changes",
-    );
-    const cursorDbClient = postgres(databaseUrl, { max: 1 });
-    const cursorDb = drizzle(cursorDbClient, { schema });
-    const [cursorState] = await cursorDb
-      .select()
-      .from(syncRevision)
-      .where(eq(syncRevision.singleton, 1));
-    assert(cursorState, "sync revision state exists for change-feed retention");
-    try {
-      await cursorDb
-        .update(syncRevision)
-        .set({ minimumCursor: Number(bootstrapRevision) })
-        .where(eq(syncRevision.singleton, 1));
-      const expired = await adminA.request("/api/v1/sync/changes?cursor=0&limit=10");
-      assert.equal(expired.status, 409, "a cursor older than retained history requests recovery");
-      assert.deepEqual(await expired.json(), {
-        code: "CURSOR_EXPIRED",
-        message: "The directory cursor is older than the retained change feed",
-        resetRequired: true,
-      });
-    } finally {
-      await cursorDb
-        .update(syncRevision)
-        .set({ minimumCursor: cursorState.minimumCursor })
-        .where(eq(syncRevision.singleton, 1));
-      await cursorDbClient.end({ timeout: 5 });
-    }
     const rowsForProject = await adminA.request(`/api/v1/projects/${project.id}`);
     const projectDetail = (await rowsForProject.json()) as {
       engagements: Array<{ workerId: string }>;
@@ -1390,7 +1307,7 @@ async function main(): Promise<void> {
     assert.equal(
       archivedWorkerCreate.status,
       409,
-      "queued creates cannot assign archived contacts",
+      "online creates cannot assign archived contacts",
     );
     const archivedWorkerUpdate = await submitDirectoryCommand(adminA, {
       commandId: randomUUID(),
@@ -1399,7 +1316,7 @@ async function main(): Promise<void> {
       kind: "ENGAGEMENT_UPDATE",
       payload: { ...engagement, projectId: otherProject.id },
     });
-    assert.equal(archivedWorkerUpdate.status, 409, "queued edits cannot assign archived contacts");
+    assert.equal(archivedWorkerUpdate.status, 409, "online edits cannot assign archived contacts");
     const retainedProject = (await (
       await adminA.request(`/api/v1/projects/${project.id}`)
     ).json()) as { engagements: Array<{ workerId: string }> };
@@ -1453,7 +1370,7 @@ async function main(): Promise<void> {
     assert.equal(
       archivedOwnerCreate.status,
       409,
-      "queued project creates cannot assign archived owners",
+      "online project creates cannot assign archived owners",
     );
     const archivedOwnerUpdate = await submitDirectoryCommand(adminA, {
       commandId: randomUUID(),
@@ -1465,7 +1382,7 @@ async function main(): Promise<void> {
     assert.equal(
       archivedOwnerUpdate.status,
       409,
-      "queued project edits cannot assign archived owners",
+      "online project edits cannot assign archived owners",
     );
     const businessFixture = postgres(databaseUrl, { max: 1 });
     try {
@@ -1484,92 +1401,49 @@ async function main(): Promise<void> {
       await businessFixture.end({ timeout: 5 });
     }
 
-    const directoryCommandId = randomUUID();
-    const directoryEntityId = randomUUID();
-    const directoryCommand = {
-      commandId: directoryCommandId,
-      entityId: directoryEntityId,
-      expectedVersion: 0,
-      kind: "CONTACT_CREATE",
-      payload: {
-        displayName: "M1b sync receipt contact",
-        phone: null,
-        isWorker: false,
-        isSupplier: true,
-        isOwner: false,
-        createdBy: fixtureId,
-      },
+    const atomicBudgetId = randomUUID();
+    const atomicProjectInput = {
+      name: "Atomic online project",
+      ownerContactId: null,
+      startsOn: null,
+      endsOn: null,
+      contractInitialToman: "1000",
+      budget: { id: atomicBudgetId, category: "Labor", amountToman: "600", expectedVersion: 0 },
     };
-    const commandResponse = await adminA.request("/api/v1/sync/commands", {
+    const atomicCreate = await adminA.request("/api/v1/projects", {
       method: "POST",
-      body: JSON.stringify([directoryCommand]),
+      body: JSON.stringify(atomicProjectInput),
     });
-    assert.equal(commandResponse.status, 201);
-    const commandBody = (await commandResponse.json()) as {
-      results: Array<{ ok: boolean; result: { replayed: boolean; entity: { id: string } } }>;
-    };
-    assert.equal(
-      commandBody.results[0]?.ok,
-      true,
-      "authenticated offline directory command applies",
-    );
-    assert.equal(commandBody.results[0]?.result.entity.id, directoryEntityId);
-    assert.equal(commandBody.results[0]?.result.replayed, false);
-    const reorderedCommand = {
-      payload: {
-        isOwner: false,
-        isSupplier: true,
-        isWorker: false,
-        phone: null,
-        displayName: "M1b sync receipt contact",
-        createdBy: fixtureId,
-      },
-      kind: "CONTACT_CREATE",
-      expectedVersion: 0,
-      entityId: directoryEntityId,
-      commandId: directoryCommandId,
-    };
-    const directoryRetry = await adminA.request("/api/v1/sync/commands", {
-      method: "POST",
-      body: JSON.stringify([reorderedCommand]),
+    assert.equal(atomicCreate.status, 201, "project and budget save atomically online");
+    const atomicProject = (await atomicCreate.json()) as { id: string; version: number };
+    const rejectedBudget = await adminA.request(`/api/v1/projects/${atomicProject.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...atomicProjectInput,
+        name: "Must roll back",
+        expectedVersion: atomicProject.version,
+      }),
     });
-    const retryBody = (await directoryRetry.json()) as {
-      results: Array<{ ok: boolean; result: { replayed: boolean; entity: { id: string } } }>;
-    };
-    assert.equal(retryBody.results[0]?.ok, true);
-    assert.equal(
-      retryBody.results[0]?.result.replayed,
-      true,
-      "immutable retry returns its saved result",
-    );
-    assert.equal(retryBody.results[0]?.result.entity.id, directoryEntityId);
-    const changedDirectoryRetry = await adminA.request("/api/v1/sync/commands", {
-      method: "POST",
-      body: JSON.stringify([
-        { ...directoryCommand, payload: { ...directoryCommand.payload, displayName: "Changed" } },
-      ]),
-    });
-    const changedBody = (await changedDirectoryRetry.json()) as {
-      results: Array<{ ok: boolean; status: number }>;
-    };
-    assert.equal(
-      changedBody.results[0]?.status,
-      409,
-      "a changed body cannot reuse a directory command ID",
-    );
-    const commandAuditClient = postgres(databaseUrl, { max: 1 });
-    try {
-      const commandAuditDb = drizzle(commandAuditClient, { schema });
-      const [commandAudit] = await commandAuditDb
-        .select()
-        .from(businessAudit)
-        .where(eq(businessAudit.entityId, directoryEntityId))
-        .limit(1);
-      assert.equal(commandAudit?.actorUserId, normalA.user.id, "command actor is server-derived");
-    } finally {
-      await commandAuditClient.end({ timeout: 5 });
+    assert.equal(rejectedBudget.status, 409, "stale budget rejects the entire project edit");
+    const unchangedProject = (await (
+      await adminA.request(`/api/v1/projects/${atomicProject.id}`)
+    ).json()) as { name: string; version: number; budgets: Array<{ amountToman: string }> };
+    assert.equal(unchangedProject.name, atomicProjectInput.name);
+    assert.equal(unchangedProject.version, atomicProject.version);
+    assert.equal(unchangedProject.budgets[0]?.amountToman, "600");
+    for (const path of [
+      "sync/bootstrap",
+      "sync/changes",
+      "sync/commands",
+      "workforce/sync/commands",
+      "procurement/sync/commands",
+    ]) {
+      const removed = await adminA.request(
+        "/api/v1/" + path,
+        path.endsWith("commands") ? { method: "POST", body: "[]" } : {},
+      );
+      assert.equal(removed.status, 404, "offline synchronization endpoints are removed");
     }
-
     const createdDraftA = await adminA.request("/api/v1/drafts", {
       method: "POST",
       body: JSON.stringify(commandA),
@@ -1663,23 +1537,6 @@ async function main(): Promise<void> {
       (await adminB.request(`/api/v1/projects/${project.id}`)).status,
       200,
       "company directory data is shared across authenticated admin accounts",
-    );
-    const sameUserScopedCommand = await adminB.request("/api/v1/sync/commands", {
-      method: "POST",
-      body: JSON.stringify([
-        {
-          ...directoryCommand,
-          entityId: randomUUID(),
-        },
-      ]),
-    });
-    const sameCommandBody = (await sameUserScopedCommand.json()) as {
-      results: Array<{ ok: boolean; result?: { replayed: boolean } }>;
-    };
-    assert.equal(
-      sameCommandBody.results[0]?.result?.replayed,
-      false,
-      "directory command receipts are scoped to the authenticated account",
     );
     const staleTab = makeClient(base, origin);
     await staleTab.bootstrapCsrf();
@@ -1966,7 +1823,7 @@ async function main(): Promise<void> {
     }
 
     process.stdout.write(
-      "API M1a/M1b/M2 verification passed: identity and account lifecycle, private note receipts, shared directory APIs and sync recovery, workforce decimal snapshots, LAB01–04 balances, idempotent posting, concurrent finalization, reversals and account isolation.\n",
+      "API M1a/M1b/M2 verification passed: identity and account lifecycle, private note receipts, shared online directory APIs, workforce decimal snapshots, LAB01–04 balances, idempotent posting, concurrent finalization, reversals and account isolation.\n",
     );
     verificationSucceeded = true;
   } finally {
@@ -1984,8 +1841,6 @@ async function main(): Promise<void> {
         await tx.delete(businessAudit).where(inArray(businessAudit.actorUserId, ids));
         if (sessionIds.length > 0)
           await tx.delete(businessAudit).where(inArray(businessAudit.actorSessionId, sessionIds));
-        await tx.delete(syncChanges).where(inArray(syncChanges.actorUserId, ids));
-        await tx.delete(directoryReceipts).where(inArray(directoryReceipts.userId, ids));
         await tx.delete(workforceReceipts).where(inArray(workforceReceipts.userId, ids));
         await tx.delete(workforceRecords).where(inArray(workforceRecords.createdBy, ids));
         await tx.delete(engagements).where(inArray(engagements.createdBy, ids));
@@ -2029,39 +1884,37 @@ async function submitDirectoryCommand(
   client: ReturnType<typeof makeClient>,
   command: Record<string, unknown>,
 ) {
-  const response = await client.request("/api/v1/sync/commands", {
-    method: "POST",
-    body: JSON.stringify([command]),
-  });
-  assert.equal(response.status, 201);
-  const body = (await response.json()) as {
-    results: Array<{ ok: boolean; status?: number; error?: unknown }>;
-  };
-  const result = body.results[0];
-  assert(result, "queued directory command returns a result");
-  assert.equal(result.ok, false, "invalid archived assignment is rejected");
-  return result;
+  const kind = String(command.kind);
+  const resource = kind.startsWith("PROJECT")
+    ? "projects"
+    : kind.startsWith("CONTACT")
+      ? "contacts"
+      : "engagements";
+  const update = kind.endsWith("UPDATE");
+  const response = await client.request(
+    "/api/v1/" + resource + (update ? "/" + command.entityId : ""),
+    {
+      method: update ? "PATCH" : "POST",
+      body: JSON.stringify({
+        ...(command.payload as object),
+        ...(update ? { expectedVersion: command.expectedVersion } : {}),
+      }),
+    },
+  );
+  assert(!response.ok, "invalid archived assignment is rejected");
+  return { ok: false, status: response.status, error: await response.json() };
 }
 
 async function submitWorkforceDraft(
   client: ReturnType<typeof makeClient>,
   command: Record<string, unknown>,
 ) {
-  const response = await client.request("/api/v1/workforce/sync/commands", {
+  const response = await client.request("/api/v1/workforce/drafts", {
     method: "POST",
-    body: JSON.stringify([command]),
+    body: JSON.stringify(command),
   });
-  assert.equal(
-    response.status,
-    201,
-    `workforce draft command returns an outcome: ${await response.clone().text()}`,
-  );
-  const body = (await response.json()) as {
-    results: Array<{ ok: boolean; status?: number; result?: unknown; error?: unknown }>;
-  };
-  const result = body.results[0];
-  assert(result, "workforce command returns one result");
-  return result;
+  const result = await response.json();
+  return response.ok ? { ok: true, result } : { ok: false, status: response.status, error: result };
 }
 
 async function createWorkforceDraft(

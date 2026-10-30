@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/error-message";
 import { useReducer, type FormEvent } from "react";
 import { ProcurementDocumentInputSchema, type ProcurementDocumentInput } from "@sazeh/contracts";
 import { normalizeDigits } from "../../business/domain";
@@ -158,8 +159,7 @@ export function ProcurementEntryForm(props: Props) {
       await props.onSave(input, props.recordId, props.version);
       props.onSaved();
     } catch (error) {
-      const issue = (error as { issues?: Array<{ message?: string }> }).issues?.[0]?.message;
-      update({ message: issue ?? (error instanceof Error ? error.message : "ذخیره انجام نشد.") });
+      update({ message: errorMessage(error) });
     } finally {
       update({ saving: false });
     }

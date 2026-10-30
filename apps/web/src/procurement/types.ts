@@ -1,4 +1,4 @@
-import type { MaterialInput, ProcurementDocumentInput } from "@sazeh/contracts";
+import type { ProcurementDocumentInput } from "@sazeh/contracts";
 
 export type ProcurementFilter = {
   projectId: string;
@@ -90,24 +90,10 @@ export type ProcurementReport = {
   valuationOrderLabel: string;
 };
 
-export type ProcurementLocalDraft = {
-  id: string;
-  entityType: "MATERIAL" | "DOCUMENT";
-  data: MaterialInput | ProcurementDocumentInput;
-  version: number;
-  status: "DRAFT" | "FINALIZED" | "REVERSED";
-  syncState: string;
-  updatedAt: string;
-  editRevision: number;
-  problem?: string;
-  serverData?: Record<string, unknown>;
-};
-
 export type MaterialView = {
   id: string;
   name: string;
   baseUnit: string;
   archived: boolean;
   version: number;
-  syncState: string;
 };

@@ -1,10 +1,5 @@
 import type { DirectoryRecord } from "../../business/types";
-import type {
-  WorkforceFilter,
-  WorkforceLocalDraft,
-  WorkforceServerRecord,
-  WorkforceTotals,
-} from "../types";
+import type { WorkforceFilter, WorkforceServerRecord, WorkforceTotals } from "../types";
 
 export type AnalyticsRow = {
   projectId: string;
@@ -30,7 +25,6 @@ export type StatementProps = {
       }
     | undefined;
   analytics: AnalyticsRow[];
-  localDrafts: WorkforceLocalDraft[];
   online: boolean;
   loading: boolean;
   error: string;
@@ -40,5 +34,4 @@ export type StatementProps = {
   onReverse: (record: WorkforceServerRecord, reason: string) => Promise<void>;
   onEdit: (record: WorkforceServerRecord) => void;
   reviewReady: (record: WorkforceServerRecord) => boolean;
-  onEditLocal: (draft: WorkforceLocalDraft) => void;
 };

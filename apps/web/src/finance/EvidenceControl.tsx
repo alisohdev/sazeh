@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DraftWorkspace } from "@/drafts/draft-repository";
+import { errorMessage } from "@/lib/error-message";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { WorkspaceRepository } from "@/data/workspace-repository";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 export function EvidenceControl({
@@ -8,95 +8,69 @@ export function EvidenceControl({
   recordId,
   parentType = "FINANCE",
 }: {
-  repository: DraftWorkspace;
+  repository: WorkspaceRepository;
   recordId: string;
   parentType?: "FINANCE" | "WORKFORCE" | "PROCUREMENT" | "PROJECT";
 }) {
   const client = useQueryClient();
-  const key = ["evidence-local", repository.userId, recordId];
-  const files = useQuery({
-    networkMode: "always",
-    queryKey: key,
-    queryFn: async () => (await repository.evidenceItems()).filter((f) => f.recordId === recordId),
-  });
-  useEffect(
-    () =>
-      repository.subscribe(() => {
-        void client.invalidateQueries({ queryKey: ["evidence-local", repository.userId] });
-        void client.invalidateQueries({ queryKey: ["evidence-remote", repository.userId] });
-      }),
-    [client, repository],
-  );
+  const key = ["evidence", repository.userId, recordId];
   const remote = useQuery({
+    queryKey: key,
     retry: false,
-    queryKey: ["evidence-remote", repository.userId, recordId],
-    enabled: navigator.onLine,
     queryFn: () => repository.remoteEvidence(recordId),
   });
+  const upload = useMutation({
+    networkMode: "always",
+    mutationFn: (file: File) => repository.saveEvidence(recordId, file, parentType),
+    onSuccess: () => client.invalidateQueries({ queryKey: key }),
+  });
+  const download = useMutation({
+    networkMode: "always",
+    mutationFn: (id: string) => repository.downloadEvidence(id),
+    onSuccess: ({ url }) => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+  });
   return (
-    <div className="grid min-w-0 w-full gap-2">
+    <div className="grid w-full min-w-0 gap-2">
       <label>
         افزودن رسید / تصویر / PDF (تا ۱۰ مگابایت)
         <Input
           type="file"
           accept="image/jpeg,image/png,image/webp,application/pdf"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file)
-              void repository
-                .saveEvidence(recordId, file, parentType)
-                .then(() => client.invalidateQueries({ queryKey: key }));
+          disabled={upload.isPending || !navigator.onLine}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) upload.mutate(file);
+            event.target.value = "";
           }}
         />
       </label>
-      {(files.error || remote.error) && (
+      {upload.isPending && <p role="status">در حال بارگذاری…</p>}
+      {(upload.error || remote.error || download.error) && (
         <p role="alert" className="text-destructive">
-          بررسی پیوست‌ها ناموفق بود؛ وضعیت پیوست‌ها نامشخص است.{" "}
-          {String((files.error || remote.error)?.message)}
+          {errorMessage(upload.error || remote.error || download.error)}
         </p>
       )}
-      {remote.isFetching && <p>در حال بررسی وضعیت پیوست‌های سرور…</p>}
-      {files.data?.map((f) => (
-        <p key={f.id} className="break-words">
-          {f.filename}: {f.problem ? "بارگذاری ناموفق: " + f.problem : "در صف بارگذاری"}
-        </p>
-      ))}
-      {remote.data?.map((f) => (
-        <div className="flex flex-wrap gap-2" key={f.id}>
+      {remote.isFetching && <p role="status">در حال دریافت پیوست‌ها…</p>}
+      {remote.data?.map((file) => (
+        <div className="flex flex-wrap items-center gap-2" key={file.id}>
           <span className="break-words">
-            {f.filename} —{" "}
-            {f.state === "READY"
-              ? "آماده"
-              : f.state === "FAILED"
-                ? "بارگذاری ناموفق"
-                : "در انتظار بارگذاری"}
+            {file.filename} —{" "}
+            {file.state === "READY" ? "آماده" : "بارگذاری کامل نشده؛ پرونده را دوباره انتخاب کنید."}
           </span>
-          {f.state === "READY" && (
+          {file.state === "READY" && (
             <Button
               variant="outline"
               type="button"
-              onClick={() =>
-                void repository
-                  .downloadEvidence(f.id)
-                  .then(({ url }) => window.open(url, "_blank", "noopener,noreferrer"))
-              }
+              disabled={download.isPending}
+              onClick={() => download.mutate(file.id)}
             >
               دریافت
             </Button>
           )}
         </div>
       ))}
-      <Button
-        variant="outline"
-        type="button"
-        onClick={() => {
-          void repository.syncPending();
-          void remote.refetch();
-          void files.refetch();
-        }}
-      >
-        تلاش دوباره بارگذاری
-      </Button>
     </div>
   );
 }

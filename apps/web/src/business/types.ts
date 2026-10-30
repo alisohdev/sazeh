@@ -1,4 +1,4 @@
-export type DirectoryKind = "PROJECT" | "CONTACT" | "ENGAGEMENT" | "BUDGET";
+export type DirectoryKind = "PROJECT" | "CONTACT" | "ENGAGEMENT" | "BUDGET" | "MATERIAL";
 export type WorkspaceTab = "projects" | "contacts" | "engagements";
 export type DirectorySaveResult = { ok: true } | { ok: false; error: string };
 
@@ -7,9 +7,6 @@ export type DirectoryRecord = {
   type: DirectoryKind;
   data: Record<string, unknown>;
   version: number;
-  syncState: string;
-  problem?: string;
-  serverData?: Record<string, unknown>;
 };
 
 export type DirectorySelection = { type: DirectoryKind; id: string };
@@ -20,6 +17,4 @@ export type WorkspaceDirectoryData = {
   engagements: DirectoryRecord[];
   budgets: DirectoryRecord[];
   materials: DirectoryRecord[];
-  lastSync: string;
-  pending: number;
 };

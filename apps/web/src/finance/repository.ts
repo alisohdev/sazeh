@@ -1,4 +1,4 @@
-import { authClient } from "../identity/auth-client";
+import { authClient, ApiError } from "../identity/auth-client";
 import type { FinanceDraft, FinanceAction, FinanceReverse } from "@sazeh/contracts";
 export type FinanceRow = FinanceDraft["input"] & {
   id: string;
@@ -28,8 +28,8 @@ export async function financeRequest<T>(
     userId,
   );
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message ?? "عملیات مالی انجام نشد");
+    const error = await response.json().catch(() => ({}));
+    throw new ApiError(error.message ?? "", response.status, error.code ?? "REQUEST_FAILED");
   }
   return response.json() as Promise<T>;
 }

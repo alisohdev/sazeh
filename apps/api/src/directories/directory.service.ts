@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -11,22 +10,17 @@ import {
   ContactInputSchema,
   EngagementInputSchema,
   ProjectInputSchema,
-  type DirectoryCommand,
+  type DirectoryMutationKind,
 } from "@sazeh/contracts";
 import { and, asc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { DATABASE, type Database } from "../db/database.module.js";
 import {
   businessAudit,
   contacts,
-  directoryBootstrapSnapshots,
-  directoryReceipts,
   engagements,
-  materials,
   financeRecords,
   projectBudgets,
   projects,
-  syncChanges,
-  syncRevision,
 } from "../db/schema.js";
 import { claimsFor, requireLiveSession, type Principal } from "../identity/identity.service.js";
 
@@ -34,7 +28,6 @@ type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Writer = Database | Tx;
 type ListResource = "projects" | "contacts" | "engagements" | "budgets";
 type ListCursor = { value: string; id: string };
-const CHANGE_FEED_RETENTION = 10_000;
 
 @Injectable()
 export class DirectoryService {
@@ -180,7 +173,7 @@ export class DirectoryService {
 
   async write(
     principal: Principal,
-    kind: DirectoryCommand["kind"],
+    kind: DirectoryMutationKind,
     id: string,
     expectedVersion: number,
     payload: Record<string, unknown>,
@@ -190,177 +183,25 @@ export class DirectoryService {
       return this.mutate(tx, principal, kind, id, expectedVersion, payload);
     });
   }
-
-  async command(principal: Principal, command: DirectoryCommand) {
-    const bodyHash = createHash("sha256").update(canonicalJson(command)).digest("hex");
+  async writeProject(
+    principal: Principal,
+    kind: "PROJECT_CREATE" | "PROJECT_UPDATE",
+    id: string,
+    expectedVersion: number,
+    payload: Record<string, unknown>,
+    budget?: { id: string; category: string; amountToman: string; expectedVersion: number },
+  ) {
     return this.db.transaction(async (tx) => {
       await requireLiveSession(tx, claimsFor(principal), false, "share");
-      const [claimed] = await tx
-        .insert(directoryReceipts)
-        .values({ userId: principal.userId, commandId: command.commandId, bodyHash, result: {} })
-        .onConflictDoNothing({ target: [directoryReceipts.userId, directoryReceipts.commandId] })
-        .returning({ commandId: directoryReceipts.commandId });
-      if (!claimed) {
-        const [receipt] = await tx
-          .select()
-          .from(directoryReceipts)
-          .where(
-            and(
-              eq(directoryReceipts.userId, principal.userId),
-              eq(directoryReceipts.commandId, command.commandId),
-            ),
-          )
-          .limit(1);
-        if (!receipt)
-          throw new Error("Directory command receipt disappeared after uniqueness conflict");
-        if (receipt.bodyHash !== bodyHash)
-          throw new ConflictException({
-            code: "COMMAND_ID_CONFLICT",
-            message: "Command ID was used with different content",
-          });
-        return { ...(receipt.result as object), replayed: true };
-      }
-      const entity = await this.mutate(
-        tx,
-        principal,
-        command.kind,
-        command.entityId,
-        command.expectedVersion,
-        command.payload,
-      );
-      const [currentRevision] = await tx
-        .select()
-        .from(syncRevision)
-        .where(eq(syncRevision.singleton, 1));
-      const revision = currentRevision?.revision ?? 0;
-      const result = {
-        protocolVersion: 1,
-        commandId: command.commandId,
-        entity,
-        revision: String(revision),
-        replayed: false,
-      };
-      await tx
-        .update(directoryReceipts)
-        .set({ result })
-        .where(
-          and(
-            eq(directoryReceipts.userId, principal.userId),
-            eq(directoryReceipts.commandId, command.commandId),
-          ),
-        );
-      return result;
+      const project = await this.mutate(tx, principal, kind, id, expectedVersion, payload);
+      if (budget)
+        await this.mutate(tx, principal, "BUDGET_SET", budget.id, budget.expectedVersion, {
+          projectId: id,
+          category: budget.category,
+          amountToman: budget.amountToman,
+        });
+      return project;
     });
-  }
-
-  async bootstrap(snapshotId?: string, after?: string, limit = 100) {
-    const now = new Date();
-    await this.db
-      .delete(directoryBootstrapSnapshots)
-      .where(lte(directoryBootstrapSnapshots.expiresAt, now));
-    const snapshot = snapshotId
-      ? await this.loadBootstrapSnapshot(snapshotId, now)
-      : await this.createBootstrapSnapshot(now);
-    const offset = after ? decodeBootstrapCursor(after, snapshot.id, snapshot.items.length) : 0;
-    const items = snapshot.items.slice(offset, offset + limit);
-    const nextOffset = offset + items.length;
-    return {
-      protocolVersion: 1,
-      snapshotId: snapshot.id,
-      cursor: String(snapshot.revision),
-      items,
-      nextCursor:
-        nextOffset < snapshot.items.length ? encodeBootstrapCursor(snapshot.id, nextOffset) : null,
-    };
-  }
-
-  private async createBootstrapSnapshot(now: Date) {
-    return this.db.transaction(
-      async (tx) => {
-        const [cursor] = await tx.select().from(syncRevision).where(eq(syncRevision.singleton, 1));
-        const [projectRows, contactRows, engagementRows, budgetRows, materialRows] =
-          await Promise.all([
-            tx.select().from(projects),
-            tx.select().from(contacts),
-            tx.select().from(engagements),
-            tx.select().from(projectBudgets),
-            tx.select().from(materials),
-          ]);
-        const items = [
-          ...projectRows.map((entity) => ({ entityType: "PROJECT", entity })),
-          ...contactRows.map((entity) => ({ entityType: "CONTACT", entity })),
-          ...engagementRows.map((entity) => ({ entityType: "ENGAGEMENT", entity })),
-          ...budgetRows.map((entity) => ({ entityType: "BUDGET", entity })),
-          ...materialRows.map((entity) => ({ entityType: "MATERIAL", entity })),
-        ].sort((a, b) =>
-          a.entityType === b.entityType
-            ? String(a.entity.id).localeCompare(String(b.entity.id))
-            : a.entityType.localeCompare(b.entityType),
-        );
-        const [snapshot] = await tx
-          .insert(directoryBootstrapSnapshots)
-          .values({
-            id: crypto.randomUUID(),
-            revision: cursor?.revision ?? 0,
-            items,
-            expiresAt: new Date(now.getTime() + 10 * 60_000),
-          })
-          .returning();
-        if (!snapshot) throw new Error("Directory bootstrap snapshot was not stored");
-        return snapshot;
-      },
-      { isolationLevel: "repeatable read" },
-    );
-  }
-
-  private async loadBootstrapSnapshot(id: string, now: Date) {
-    const [snapshot] = await this.db
-      .select()
-      .from(directoryBootstrapSnapshots)
-      .where(
-        and(eq(directoryBootstrapSnapshots.id, id), gt(directoryBootstrapSnapshots.expiresAt, now)),
-      )
-      .limit(1);
-    if (!snapshot)
-      throw new ConflictException({
-        code: "BOOTSTRAP_SNAPSHOT_EXPIRED",
-        message: "The directory snapshot expired; start a new bootstrap",
-        resetRequired: true,
-      });
-    return snapshot;
-  }
-
-  async changes(after: number, limit = 100) {
-    return this.db.transaction(
-      async (tx) => {
-        const [high] = await tx.select().from(syncRevision).where(eq(syncRevision.singleton, 1));
-        if (after > (high?.revision ?? 0))
-          throw new ConflictException({
-            code: "CURSOR_INVALID",
-            message: "The directory cursor is ahead of the current feed",
-            resetRequired: true,
-          });
-        if (after < (high?.minimumCursor ?? 0))
-          throw new ConflictException({
-            code: "CURSOR_EXPIRED",
-            message: "The directory cursor is older than the retained change feed",
-            resetRequired: true,
-          });
-        const rows = await tx
-          .select()
-          .from(syncChanges)
-          .where(gt(syncChanges.revision, after))
-          .orderBy(asc(syncChanges.revision))
-          .limit(limit);
-        return {
-          changes: rows,
-          cursor: String(rows.at(-1)?.revision ?? after),
-          highWatermark: String(high?.revision ?? 0),
-          hasMore: rows.length === limit,
-        };
-      },
-      { isolationLevel: "repeatable read" },
-    );
   }
 
   async setBudgets(
@@ -387,7 +228,7 @@ export class DirectoryService {
   private async mutate(
     tx: Tx,
     actor: Principal,
-    kind: DirectoryCommand["kind"],
+    kind: DirectoryMutationKind,
     id: string,
     expectedVersion: number,
     input: Record<string, unknown>,
@@ -756,71 +597,7 @@ export class DirectoryService {
       beforeValue,
       afterValue,
     });
-    await this.publish(tx, actor, entityType, entityId, afterValue);
     return afterValue;
-  }
-
-  private async publish(
-    tx: Tx,
-    actor: Principal,
-    entityType: string,
-    entityId: string,
-    snapshot: unknown,
-  ) {
-    const [next] = await tx
-      .update(syncRevision)
-      .set({ revision: sql`${syncRevision.revision} + 1` })
-      .where(eq(syncRevision.singleton, 1))
-      .returning();
-    if (!next) throw new Error("Directory sync revision row is missing");
-    const revision = next.revision;
-    await tx
-      .insert(syncChanges)
-      .values({ revision, entityType, entityId, snapshot, actorUserId: actor.userId });
-    const minimumCursor = Math.max(next.minimumCursor, revision - CHANGE_FEED_RETENTION);
-    if (minimumCursor > next.minimumCursor) {
-      await tx.update(syncRevision).set({ minimumCursor }).where(eq(syncRevision.singleton, 1));
-      await tx.delete(syncChanges).where(lte(syncChanges.revision, minimumCursor));
-    }
-    return revision;
-  }
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
-}
-
-function encodeBootstrapCursor(snapshotId: string, offset: number): string {
-  return Buffer.from(JSON.stringify({ snapshotId, offset })).toString("base64url");
-}
-
-function decodeBootstrapCursor(value: string, snapshotId: string, itemCount: number): number {
-  try {
-    const cursor = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
-      snapshotId?: unknown;
-      offset?: unknown;
-    };
-    if (
-      cursor.snapshotId !== snapshotId ||
-      !Number.isSafeInteger(cursor.offset) ||
-      Number(cursor.offset) < 0 ||
-      Number(cursor.offset) > itemCount
-    )
-      throw new Error("Invalid bootstrap page cursor");
-    return Number(cursor.offset);
-  } catch {
-    throw new BadRequestException({
-      code: "INVALID_BOOTSTRAP_CURSOR",
-      message: "The bootstrap page cursor is invalid",
-    });
   }
 }
 

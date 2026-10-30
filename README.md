@@ -1,13 +1,15 @@
-# Sazeh — local-first application
+# Sazeh
 
-This repository contains the M0 local-first foundation, M1a authentication, and the M1b project directory. It includes a React/Vite installable PWA, a NestJS API, PostgreSQL with Drizzle migrations, and S3-compatible development attachment storage backed by SeaweedFS. Authenticated administrators can manage projects, shared contacts, worker-project engagements, default rates, editable project budget labels, and offline directory changes. Earnings, materials, purchasing, financial reports, and financial charts remain in later milestones.
+Online Persian RTL construction project management: projects, people, workforce accounting, procurement, inventory, finance, evidence and analytics. React/Vite, TanStack Query, NestJS, Drizzle/PostgreSQL and private S3-compatible storage.
+
+All saves require a server response. There is no IndexedDB, offline draft queue, background synchronization or cached application shell. Server-side financial drafts still require explicit finalization.
 
 ## Prerequisites
 
 - Node.js 24.x. The repository records 24.22.1 in `.node-version` and requires Node 24.x in `package.json`.
 - Corepack and pnpm 12.15.0. The exact package-manager version is pinned in `package.json`.
 - Docker Desktop with Compose v2.
-- Google Chrome for the browser verification command. Playwright uses the installed Chrome channel.
+- Microsoft Edge for the browser verification command. Playwright uses the installed Edge channel.
 
 Run commands below from the repository root in PowerShell.
 
@@ -33,72 +35,25 @@ Use `corepack pnpm` directly in PowerShell. Do not run `corepack enable` from an
 corepack pnpm dev
 ```
 
-- PWA: <http://127.0.0.1:5173>
+- Web app: <http://127.0.0.1:5173>
 - API liveness: <http://127.0.0.1:5173/api/health/live>
 - API readiness: <http://127.0.0.1:5173/api/health/ready>
 - Direct API liveness: <http://127.0.0.1:3000/api/health/live>
 
-Vite forwards `/api/*` requests to NestJS on port 3000. Readiness checks PostgreSQL and, when S3 settings are present, the configured bucket. The note form commits a local draft and its immutable outbox command in one IndexedDB transaction before showing success. It attempts synchronization when opened, when connectivity returns, and when the user selects retry. A retry uses the original command ID and body.
+Vite proxies `/api/*` to the local API. PostgreSQL stores application data; attachments use private object storage.
 
-The service worker caches the app shell only; it does not cache API responses. Drafts remain in IndexedDB across reloads. The page includes an export action for drafts that have not synchronized.
+## Account setup
 
-M1b adds authenticated offline project, contact, engagement, and budget editing. Directory commands are account-scoped and immutable; contacts/projects sync before dependent assignments. Bootstrap pages share one snapshot cursor, change-feed recovery is commit ordered, and stale edits remain reviewable. TanStack Query caches directory data backed by the existing Dexie workspace; shadcn/ui and Tailwind provide the RTL interface. The project overview shows entered project information, clearly labeled counts, filters, and assignment drill-down. It does not estimate earnings or display invented financial metrics.
+Run `pnpm bootstrap:superuser` once against the intended database. It creates the first superuser; it is not a password reset. The superuser creates admin accounts and their initial passwords must be changed on first login.
 
-The local browser origin must match `AUTH_ALLOWED_ORIGIN` exactly (`http://127.0.0.1:5173` by default). The API rejects unsafe requests without that origin and a CSRF cookie/header pair. The local cookie uses the localhost HTTP exception; shared environments must use HTTPS. M1a login throttling uses the direct socket address and ignores forwarded IP headers. Behind a proxy, requests share the proxy's throttle bucket until a future release adds a trusted proxy allowlist.
+## Checks
 
-The Persian interface uses the supplied, self-hosted IRANSansXFaNum WOFF2 files. The PWA precaches these fonts for offline use. The archive did not include a project license file or code; retain the FontIran project license with any published deployment.
+- `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `pnpm build`: source and production build checks.
+- `pnpm verify:browser`: five isolated browser regressions with HTTP fixtures; no database required. Covers confirmed saves, visible failures, no reconnect replay, online notes, login/logout and 360 px RTL.
+- `pnpm verify:api`, `pnpm verify:m3`, `pnpm verify:m4`: real PostgreSQL API, accounting, stock and reconciliation checks. Require local services and `.env`.
+- `pnpm verify`: complete source, database, API, storage and browser checks.
 
-The migration also creates the minimal `users` table needed by the delivery plan. To create the first local superuser record, run:
-
-```powershell
-corepack pnpm bootstrap:superuser
-```
-
-The command asks for a username and display name, reads the password without echoing it, stores only an Argon2id hash, and refuses to create another superuser. Sign in with this account in the PWA. A superuser creates ordinary admin accounts in the application; the API generates and displays each temporary password once. New and reset passwords must be changed before the account can access drafts or admin screens. No public registration or worker accounts exist.
-
-Authenticated drafts are visible only to their author. The server records the author from the live session, and idempotency receipts are keyed by user and command. Every protected request checks the current database session and account status, so logout, password reset, session revocation, or disabling an account takes effect before an access JWT expires.
-
-Each browser workspace uses a separate IndexedDB database derived from environment, origin, and user ID. Access tokens stay in memory. The old anonymous `sazeh-m0-drafts` database is never opened for sync or imported into an account. An explicit legacy export downloads old anonymous M0 drafts marked unowned; the export cannot be uploaded automatically. M0 server seed drafts also remain ownerless and are not returned by the authenticated draft API.
-
-## Verify M1a and M1b
-
-Stop `corepack pnpm dev` before running the complete browser suite; verification starts its own built API and PWA servers.
-
-```powershell
-corepack pnpm lint
-corepack pnpm typecheck
-corepack pnpm format:check
-corepack pnpm verify:database
-corepack pnpm verify:bootstrap
-corepack pnpm build
-corepack pnpm storage:verify
-corepack pnpm verify:api
-corepack pnpm verify:browser
-```
-
-Or run all checks in sequence:
-
-```powershell
-corepack pnpm verify:m0
-```
-
-The API proof uses direct HTTP calls and PostgreSQL fixtures to verify identity/account lifecycle, shared project/contact/engagement APIs, archive and date rules, audit actor provenance, immutable retries, consistent bootstrap recovery, and account-scoped receipts. Browser tests use the production build and authenticated fixtures. They retain the M1a offline note, lease, logout, account isolation, refresh, duplicate prevention, and legacy isolation checks, and add parent-before-child directory sync, held conflicts, stale acknowledgments, archive history, and 360 px RTL project overview screenshots. Fixtures are synthetic and are removed after each run.
-
-`M1B_PLAN.md` records the implementation evidence and the exact local demo/performance fixture. Use only synthetic Persian names and entered project/rate/budget values in local or isolated preview data. The performance fixture uses 10 active projects, 100 workers, 30 suppliers, and five concurrent admin sessions; it contains no real personal information. The M1b overview does not fabricate financial analytics. Delivery is staged: M2 labor and worker statements, M3 procurement/debt/stock/consumption, and M4 reconciled project financial reporting and charts after their source records exist.
-
-## Version pins
-
-All direct dependencies use exact versions and the repository commits `pnpm-lock.yaml` for the full transitive graph.
-
-| Area                 | Pinned versions                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Runtime/tooling      | Node 24.x (`.node-version` 24.22.1), pnpm 12.15.0, TypeScript 6.0.3                                            |
-| Web                  | React/React DOM 19.3.1, TanStack Query 5, Vite 8.3.5, Tailwind CSS 4, shadcn/ui, PWA plugin 2.0.0, Dexie 4.4.7 |
-| API                  | NestJS 12.3.2, Drizzle ORM 0.45.4, Drizzle Kit 0.31.11, postgres.js 3.4.9, Zod 4.6.7                           |
-| Quality/verification | ESLint 10.13.0, typescript-eslint 8.72.1, Prettier 3.9.10, Playwright 1.64.1                                   |
-| Local services       | PostgreSQL 17.11 Alpine 3.23, SeaweedFS 4.51                                                                   |
-
-The pinned Node major satisfies the Vite and NestJS runtime minimums. TypeScript 6.0.3 stays within the selected typescript-eslint peer range. Keep package versions exact; update them together with the lockfile and verification.
+Browser fixtures prove UI request behavior, not authenticated production operation. Use the database-backed checks and real storage validation for the corresponding server behavior.
 
 ## Vercel preview setup
 
@@ -118,21 +73,11 @@ The configuration is prepared for two Vercel projects backed by this same reposi
 
 The workspace has no Vercel project linked to it and no preview PostgreSQL branch or credentials configured, so no preview deployment or URL is claimed. Do not deploy a preview until it has a paired exact frontend origin, fresh auth secrets, isolated data, and application-level authentication. Preview attachment storage is not provisioned; configure a private S3-compatible service before attachment work is added.
 
-## Scope and planning pack
+## Product reference
 
-The M0 baseline did not include financial records, attachment upload endpoints, or production deployment. M1a adds authentication and admin account management. M1b adds project/contact directories, worker-project engagements, default rates, editable budget labels, authenticated offline synchronization, and a Persian project overview. M1b does not calculate earnings or deliver materials, procurement, stock, financial reports, or financial charts. The one-time bootstrap command prepares the first superuser account.
-
-The planning pack remains available:
-
-1. [Product requirements](PRD.md)
-2. [Decision register](DECISIONS.md)
-3. [Architecture decisions](adr/ADRS.md)
-4. [Domain and API contract](specs/DOMAIN_API.md)
-5. [Offline and security requirements](specs/OFFLINE_SECURITY.md)
-6. [Acceptance requirements](specs/ACCEPTANCE.md)
-7. [Delivery plan](DELIVERY.md)
-8. [Client proposal](CLIENT_PROPOSAL_FA.md)
-9. [Implementation brief](IMPLEMENTATION_BRIEF.md)
-10. [Source references](SOURCES.md)
-
-The design syntheses are recorded in [M0_ARCHITECTURE.md](M0_ARCHITECTURE.md) and [M1A_ARCHITECTURE.md](M1A_ARCHITECTURE.md), with implementation checklists in [M0_PLAN.md](M0_PLAN.md) and [M1A_PLAN.md](M1A_PLAN.md).
+- [Requirements](PRD.md)
+- [Decisions](DECISIONS.md)
+- [Domain and API](specs/DOMAIN_API.md)
+- [Acceptance and accounting examples](specs/ACCEPTANCE.md)
+- [Security](specs/SECURITY.md)
+- [Persian client proposal](CLIENT_PROPOSAL_FA.md)

@@ -72,7 +72,7 @@ export function ProcurementFormFields(props: Props) {
       <CardHeader>
         <CardTitle>{props.editing ? "ویرایش پیش‌نویس" : "ثبت خرید یا گردش مصالح"}</CardTitle>
         <CardDescription>
-          ذخیره روی دستگاه اثر مالی یا موجودی ایجاد نمی‌کند؛ ثبت نهایی فقط آنلاین است.
+          ثبت پیش‌نویس روی سرور اثر مالی یا موجودی ایجاد نمی‌کند؛ ثبت نهایی مرحله‌ای جداگانه است.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -169,7 +169,7 @@ export function ProcurementFormFields(props: Props) {
             type="submit"
             disabled={props.locked || view.saving}
           >
-            {view.saving ? "در حال ذخیره…" : "ذخیره پیش‌نویس روی دستگاه"}
+            {view.saving ? "در حال ثبت…" : "ثبت پیش‌نویس روی سرور"}
           </Button>
         </form>
       </CardContent>

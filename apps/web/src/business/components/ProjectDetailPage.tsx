@@ -1,48 +1,30 @@
 import { RecordEvidence } from "@/finance/RecordEvidence";
 import { FinancePanel } from "@/finance/FinancePanel";
-import type { DraftView } from "@sazeh/contracts";
-import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
-import type { AppController } from "@/app/useAppController";
-import { DraftEntry } from "@/app/draft-entry";
-import { DraftList } from "@/app/draft-list";
-import type { DraftWorkspace } from "@/drafts/draft-repository";
+import { ProjectNotes } from "./ProjectNotes";
+import type { WorkspaceRepository } from "@/data/workspace-repository";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { isoToJalali, persianMoney, statusLabel } from "../domain";
+import { isoToJalali, persianMoney } from "../domain";
 import type { DirectoryRecord, WorkspaceDirectoryData } from "../types";
 
-type NoteController = Pick<AppController, "drafts" | "saveDraft" | "saving" | "exportPending">;
 type Props = {
   userId: string;
   project: DirectoryRecord | undefined;
   data: WorkspaceDirectoryData;
-  notes: NoteController | undefined;
   locked: boolean;
   online: boolean;
-  repository: DraftWorkspace;
+  repository: WorkspaceRepository;
 };
 
-export function ProjectDetailPage({
-  userId,
-  project,
-  data,
-  notes,
-  locked,
-  online,
-  repository,
-}: Props) {
-  useEffect(() => {
-    if (project && online) void repository.pullProjectNotes(project.id).catch(() => undefined);
-  }, [online, project, repository]);
-
+export function ProjectDetailPage({ userId, project, data, locked, online, repository }: Props) {
   if (!project) {
     return (
       <section className="mx-auto grid w-full max-w-3xl gap-4 px-4 py-8 sm:px-6" dir="rtl">
         <Card className="p-6">
           <h2 className="text-lg font-semibold">پروژه پیدا نشد</h2>
           <p className="text-sm leading-7 text-muted-foreground">
-            ممکن است پروژه حذف شده باشد یا هنوز روی این دستگاه همگام نشده باشد.
+            پروژه در دسترس نیست. اتصال و دسترسی حساب را بررسی کنید.
           </p>
           <NavLink className="text-sm font-medium text-primary hover:underline" to="/projects">
             بازگشت به پروژه‌ها
@@ -52,9 +34,6 @@ export function ProjectDetailPage({
     );
   }
 
-  const projectNotes = (notes?.drafts ?? []).filter(
-    (draft: DraftView) => draft.projectId === project.id,
-  );
   const projectEngagements = data.engagements.filter(
     (row) => row.data.projectId === project.id && row.data.archived !== true,
   );
@@ -79,7 +58,6 @@ export function ProjectDetailPage({
             <Badge variant={archived ? "secondary" : "default"}>
               {archived ? "بایگانی‌شده" : "فعال"}
             </Badge>
-            <Badge variant="outline">{statusLabel(project.syncState)}</Badge>
           </div>
         </div>
         <NavLink
@@ -92,25 +70,7 @@ export function ProjectDetailPage({
 
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
         <div className="grid min-w-0 content-start gap-5">
-          {notes && (
-            <>
-              <DraftEntry
-                saveDraft={notes.saveDraft}
-                saving={notes.saving}
-                locked={locked}
-                projectId={project.id}
-                projectName={String(project.data.name)}
-              />
-              <DraftList
-                drafts={projectNotes}
-                exportPending={notes.exportPending}
-                syncPending={() => void repository.syncPending()}
-                online={online}
-                locked={locked}
-                projectName={String(project.data.name)}
-              />
-            </>
-          )}
+          <ProjectNotes userId={userId} projectId={project.id} online={online && !locked} />
         </div>
 
         <aside className="grid content-start gap-4">

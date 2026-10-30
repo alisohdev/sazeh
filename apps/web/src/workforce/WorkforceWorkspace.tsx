@@ -1,16 +1,17 @@
 import { useReducer } from "react";
 import type { User, WorkforceRecordInput } from "@sazeh/contracts";
 import { useSearchParams } from "react-router-dom";
-import type { DraftWorkspace } from "../drafts/draft-repository";
+import type { WorkspaceRepository } from "@/data/workspace-repository";
 import type { WorkspaceDirectoryData } from "../business/types";
 import { WorkforceEntryForm } from "./components/WorkforceEntryForm";
 import { WorkforceStatement } from "./components/WorkforceStatement";
-import type { WorkforceFilter, WorkforceLocalDraft, WorkforceServerRecord } from "./types";
+import type { WorkforceFilter, WorkforceServerRecord } from "./types";
+import { workforceInputFromRecord } from "./record-input";
 import { useWorkforce } from "./useWorkforce";
 
 type Props = {
   user: User;
-  repository: DraftWorkspace;
+  repository: WorkspaceRepository;
   data: WorkspaceDirectoryData;
   locked: boolean;
   online: boolean;
@@ -55,22 +56,17 @@ export function WorkforceWorkspace({ user, repository, data, locked, online, onS
     const savedId = await workforce.save(input, id, version ?? 0);
     dispatch({
       type: "message",
-      value: "پیش‌نویس روی دستگاه ذخیره شد؛ وضعیت همگام‌سازی جداگانه نمایش داده می‌شود.",
+      value: "پیش‌نویس روی سرور ثبت شد و آمادهٔ بررسی است.",
     });
     onStatus("پیش‌نویس نیروی کار ذخیره شد.");
     return savedId;
   }
-  function editLocal(draft: WorkforceLocalDraft) {
-    dispatch({ type: "edit", value: { id: draft.id, version: draft.version, input: draft.data } });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
   function editServer(record: WorkforceServerRecord) {
-    const local = workforce.localDrafts.find((row) => row.id === record.id);
-    if (local) editLocal(local);
+    const input = workforceInputFromRecord(record);
+    if (input) dispatch({ type: "edit", value: { id: record.id, version: record.version, input } });
   }
   function reviewReady(record: WorkforceServerRecord) {
-    const local = workforce.localDrafts.find((row) => row.id === record.id);
-    return local?.status === "DRAFT" && local.syncState === "SYNCED";
+    return online && record.status === "DRAFT";
   }
   async function finalize(record: WorkforceServerRecord) {
     await workforce.finalize(record.id, record.version);
@@ -111,7 +107,7 @@ export function WorkforceWorkspace({ user, repository, data, locked, online, onS
         initial={state.editing?.input}
         recordId={state.editing?.id}
         version={state.editing?.version}
-        locked={locked}
+        locked={locked || !online}
         onSave={save}
         onSaved={resetForm}
       />
@@ -126,7 +122,6 @@ export function WorkforceWorkspace({ user, repository, data, locked, online, onS
         projects={data.projects}
         report={workforce.report}
         analytics={workforce.analytics}
-        localDrafts={workforce.localDrafts}
         online={online}
         loading={workforce.loading}
         error={workforce.error}
@@ -136,7 +131,6 @@ export function WorkforceWorkspace({ user, repository, data, locked, online, onS
         onReverse={reverse}
         onEdit={editServer}
         reviewReady={reviewReady}
-        onEditLocal={editLocal}
       />
     </section>
   );

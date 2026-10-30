@@ -14,14 +14,12 @@ import * as schema from "../src/db/schema.js";
 import {
   businessAudit,
   contacts,
-  directoryReceipts,
   engagements,
   loginBuckets,
   projectBudgets,
   projects,
   refreshTokens,
   sessions,
-  syncChanges,
   users,
 } from "../src/db/schema.js";
 
@@ -131,28 +129,18 @@ async function main() {
         ],
       );
     });
-    measurements.sync_command_ack = await measure(
+    measurements.contact_create = await measure(
       clients,
       sampleCount,
       warmupCount,
-      async (api, index) => {
-        const entityId = randomUUID();
-        return jsonRequest(api, "/api/v1/sync/commands", "POST", [
-          {
-            commandId: randomUUID(),
-            entityId,
-            expectedVersion: 0,
-            kind: "CONTACT_CREATE",
-            payload: {
-              displayName: `Synthetic sync worker ${String(index).padStart(3, "0")}`,
-              phone: null,
-              isWorker: true,
-              isSupplier: false,
-              isOwner: false,
-            },
-          },
-        ]);
-      },
+      async (api, index) =>
+        jsonRequest(api, "/api/v1/contacts", "POST", {
+          displayName: `Synthetic worker ${index}`,
+          phone: null,
+          isWorker: true,
+          isSupplier: false,
+          isOwner: false,
+        }),
     );
     measurements.auth_me = await measure(clients, sampleCount, warmupCount, async (api) => {
       return api.request("/api/v1/auth/me");
@@ -491,8 +479,6 @@ async function cleanup() {
   const ids = admins.map((admin) => admin.id);
   await db.transaction(async (tx) => {
     await tx.delete(businessAudit).where(inArray(businessAudit.actorUserId, ids));
-    await tx.delete(syncChanges).where(inArray(syncChanges.actorUserId, ids));
-    await tx.delete(directoryReceipts).where(inArray(directoryReceipts.userId, ids));
     await tx.delete(engagements).where(inArray(engagements.createdBy, ids));
     await tx.delete(projectBudgets).where(inArray(projectBudgets.updatedBy, ids));
     await tx.delete(projects).where(inArray(projects.createdBy, ids));

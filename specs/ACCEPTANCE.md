@@ -1,12 +1,12 @@
 # Acceptance and verification specification
 
-All fixtures are synthetic. Amounts below are toman. Run calculation tests without network, posting tests against real PostgreSQL, and browser tests against a built application. Passing mocks alone is not a production gate.
+All fixtures are synthetic. Amounts below are toman. Run calculation tests without network, posting tests against real PostgreSQL, and browser regressions with isolated HTTP fixtures and authenticated server checks separately. Passing mocks alone is not a production gate.
 
 | Test | Scenario | Required result |
 |---|---|---|
 | AUTH01 | Admin calls account-create/reset/disable endpoints | 403; no account mutation, regardless of hidden UI buttons. |
 | AUTH02 | Temporary-password login | Only password change/logout accessible until changed; old temporary password unusable afterward. |
-| AUTH03 | Disable admin with unexpired JWT | Next protected request/sync rejected; session revoked. Disconnected cache limitation documented. |
+| AUTH03 | Disable admin with unexpired JWT | Next protected request rejected; session revoked. |
 | AUTH04 | Refresh token replay, wrong audience, expired JWT | Rejected, no renewed access; replay revokes family. |
 | LAB01 | 3 days × 1,000,000; deduction 200,000; advance 500,000; later payment 1,000,000 | Earnings 3,000,000; net cost 2,800,000; cash paid 1,500,000; worker balance 1,300,000. |
 | LAB02 | Same worker earns 400,000 in project B | Project A balance unchanged; separate B statement. |
@@ -28,18 +28,6 @@ All fixtures are synthetic. Amounts below are toman. Run calculation tests witho
 | COR01 | Reverse finalized deduction with reason | Original retained, linked inverse recorded, balance/cost recomputed once. |
 | COR03 | Reverse a finalized workforce record twice | First reasoned reversal links an inverse and retains the original; a second reversal is rejected or replays the same command result, never posting a second inverse. |
 | COR02 | Reverse invoice with allocated payment/dependent receipt | Reject with named dependencies; no partial reversal or corrupted totals. |
-| SYNC01 | Save offline, refresh/reopen same installed origin | Draft and outbox remain, clearly local; server balances unchanged. |
-| SYNC02 | Server commits command but reply is lost; retry 10 times | One draft/effect, same entity identity/result. |
-| SYNC03 | Same command ID with changed body | 409, no additional effect. |
-| SYNC04 | Two offline edits to same version | One accepted; other reviewed conflict; no silent overwrite. |
-| SYNC05 | Offline draft plus parent/new worker and attachment | Parent syncs before child; binary retries independently; no duplicates. |
-| SYNC06 | One invalid command in batch | Valid independent commands acknowledged; invalid entry stays visible with field errors. |
-| SYNC07 | Token expires while offline | Draft capture continues in cached workspace; sync waits for authentication, no credential persistence. |
-| SYNC08 | Global revisions under concurrent commits and paginated pulls | No missed committed changes; tombstones applied; rebuild preserves unsynced work. |
-| SYNC09 | App/service-worker/schema update with pending queue | Queue remains usable or safely held for upgrade; never discarded. |
-| SYNC10 | Edit an earning offline, refresh, reconnect, review and finalize | Local draft and immutable command survive; sync creates a server draft only; manager explicitly finalizes online; finalized totals change only after server acknowledgment. |
-| SYNC11 | Lose the finalization reply, then retry after refresh | Persisted finalization intent retries with the same command ID and produces one posting. |
-| SYNC12 | Switch accounts with pending workforce work | Departure decision includes workforce commands; another admin never uploads or reads the previous account's local outbox. |
 | FILE01 | Upload succeeds but completion reply lost | Retry completion links one verified attachment. |
 | FILE02 | Unauthenticated/disabled user requests attachment | Denied; bucket objects not publicly readable. |
 | LOCAL01 | Toman large values, fractional quantities, Persian digits | Exact server arithmetic and documented rounding; no float drift. |
@@ -49,7 +37,6 @@ All fixtures are synthetic. Amounts below are toman. Run calculation tests witho
 
 ## M1b acceptance
 
-These outcomes define M1b acceptance. Evidence from PostgreSQL API/concurrency checks, the built application, screenshots and the warmed API report is recorded in [M1B_PLAN.md](../M1B_PLAN.md). Observable behavior is required; fixed agent/browser-lane counts are not. Preserve the full M1a suite.
 
 | Test | Scenario | Required result |
 |---|---|---|
@@ -58,18 +45,14 @@ These outcomes define M1b acceptance. Evidence from PostgreSQL API/concurrency c
 | M1B-PROJ03 | Archive/reopen with links | Reason required; IDs/history/links retained; default active list hides archive; archive filter shows it; reopen restores visibility without claiming financial completion. |
 | M1B-DIR01 | Create/edit/archive multi-role contacts | Shared records, optional phone, no new users or contact login; existing links stay visible. |
 | M1B-REL01 | Six types, engagement dates and concurrency | Multi-project worker allowed; same worker/project overlap rejected regardless of type; inclusive-end collision and ongoing overlap rejected; next-day adjacency allowed; reversed range rejected; concurrent writes cannot bypass rules; no earnings generated. |
-| M1B-REL02 | Assign archived project/contact | New assignments rejected through REST and queued commands, including owner/worker assignment and changed endpoints; historical links preserved. |
+| M1B-REL02 | Assign archived project/contact | New assignments rejected through online requests, including owner/worker assignment and changed endpoints; historical links preserved. |
 | M1B-AUTH01 | Restricted/full sessions and forged actor | Anonymous/temporary-password denied; ADMIN/SUPERUSER share business data; session-derived audit actor commits with mutation. |
-| M1B-SYNC01 | Offline save/reload, parent links, duplicate/lost reply | Atomic local save; parents before children; retry creates one result; changed body with same ID returns 409 without extra effect. |
-| M1B-SYNC02 | Concurrent commits, paginated bootstrap/feed, archive and expired cursor | Snapshot/cursor consistent; no late commit missed; tombstones applied; API marks expired cursors for reset; rebuild preserves drafts/outbox. Browser checks show local work remains after reset. |
-| M1B-SYNC03 | Stale edits and held old acknowledgment after newer edit | Reviewable conflict; keep-server or revised fresh command; delayed reply cannot overwrite newer edit or mark it synced; sent command ID/body immutable. |
-| M1B-SYNC04 | Expiry/account switch, tab closure and schema recovery | Commands never cross accounts; auth pause, epoch/lease fencing, pending-work review/export, retries and queue migration preserve M1a guarantees and M0 quarantine. |
 | M1B-MOBILE01 | Project/directory recovery at 360 px RTL | Usable labels/focus/errors, Jalali/ISO round-trip and digit normalization; no page-wide overflow; screenshots for UI review. |
-| M1B-INFO01 | Counts, filters and drill-down | Distinct filtered project count before pagination; distinct linked-worker count labeled as including history; engagement count separate; local pending rows separate; cached status visible; drill-down agrees; no fabricated financial metrics. |
+| M1B-INFO01 | Counts, filters and drill-down | Distinct filtered project count before pagination; distinct linked-worker count labeled as including history; engagement count separate; server drafts separate; report timestamp visible; drill-down agrees; no fabricated financial metrics. |
 
-Retain AUTH01-04, SYNC01-04, SYNC07, LOCAL02, MOBILE01 and existing M1a API/browser regressions. UI evidence includes overview, archive/reopen, offline/conflict and mobile screenshots. Video is optional when screenshots cannot demonstrate behavior.
+Retain authentication, accounting, optimistic-version and mobile regressions. Online browser checks cover server-confirmed saves, visible failures and no reconnect replay. Screenshots support UI review.
 
-M1b performance fixture: 10 active projects, 100 workers, 30 suppliers, five concurrent admin sessions; document owner/archive/engagement/budget counts, hardware, payloads, warmup and sample counts. Record at least 200 warmed samples per ordinary project/contact/engagement/budget list/write path under test; each p95 must be below 1,000 ms excluding external network latency. Measure sync dispatch-to-visible acknowledgment p50/p95 and auth/me context timings without a one-second sync gate or relative-regression percentage gate. Record cold starts/device timings separately. The full-V1 fixture below remains a later release gate.
+M1b performance fixture: 10 active projects, 100 workers, 30 suppliers, five concurrent admin sessions; document owner/archive/engagement/budget counts, hardware, payloads, warmup and sample counts. Record at least 200 warmed samples per ordinary project/contact/engagement/budget list/write path under test; each p95 must be below 1,000 ms excluding external network latency. Measure save-response p50/p95 and auth/me timings. Record cold starts/device timings separately. The full-V1 fixture below remains a later release gate.
 
 ## Report reconciliation
 
@@ -79,8 +62,8 @@ Stock valuation order is server posting order, while business-date filters can s
 
 ## Load and deployment gates
 
-Proposed fixture: 10 active projects, 100 workers, 30 suppliers, 100 material types, 10,000 business documents and 1,000 attachment metadata entries. Run five active sessions with mixed reads, draft edits, finalizations and sync retries for at least 10 minutes. Verify no duplicate effects, deadlock data loss or pool exhaustion. Record hardware, network, dataset and p50/p95 results; adjust fixture with actual client usage.
+Proposed fixture: 10 active projects, 100 workers, 30 suppliers, 100 material types, 10,000 business documents and 1,000 attachment metadata entries. Run five active sessions with mixed reads, draft edits, finalizations and explicit retries for at least 10 minutes. Verify no duplicate effects, deadlock data loss or pool exhaustion. Record hardware, network, dataset and p50/p95 results; adjust fixture with actual client usage.
 
-Run local complete workflow, Vercel preview login/cookie/rewrite/persistence/upload workflow, then Iran-hosting rehearsal. At least one actual-device offline test must disable connectivity, restart the PWA, create drafts, restore connectivity and verify server data. Browser support targets: current Chrome/Edge desktop and Android Chrome; Safari/iOS basic app/offline behavior tested separately without promising background sync.
+Run local complete workflow, Vercel preview login/cookie/rewrite/persistence/upload workflow, then Iran-hosting rehearsal. Test online saves and visible connection failures on actual devices. Browser support targets: current Chrome/Edge desktop and Android Chrome; Safari/iOS verified separately.
 
 Go-live requires approved client sample reports, passed critical tests, tested backup restore, configured monitoring, safe migration procedure and no unresolved data-loss/security defects. No fixed schedule is committed by this specification.

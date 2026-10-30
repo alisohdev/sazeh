@@ -47,14 +47,3 @@ export type WorkforceReport = {
   pending: { count: number; amountToman: string };
   entries: WorkforceServerRecord[];
 };
-
-export type WorkforceLocalDraft = {
-  id: string;
-  data: WorkforceRecordInput;
-  version: number;
-  status: "DRAFT" | "FINALIZED" | "REVERSED";
-  syncState: string;
-  updatedAt: string;
-  editRevision: number;
-  problem?: string;
-};

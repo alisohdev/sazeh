@@ -1,9 +1,3 @@
-import type { DirectoryRecord } from "./types";
-
-export function hasServerRecord(row: DirectoryRecord) {
-  return row.version > 0 || Boolean(row.serverData);
-}
-
 export function normalizeDigits(value: string) {
   return value
     .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
@@ -113,16 +107,4 @@ export function isoToJalali(value: unknown) {
 export function persianMoney(value: unknown) {
   const amount = normalizeDigits(String(value ?? "0"));
   return /^\d+$/.test(amount) ? BigInt(amount).toLocaleString("fa-IR") : "۰";
-}
-
-export function statusLabel(status: string) {
-  return status === "SYNCED"
-    ? "همگام‌شده"
-    : status === "CONFLICT"
-      ? "نیازمند بررسی"
-      : status === "RETRY_PENDING"
-        ? "در انتظار تلاش دوباره"
-        : status === "SENDING"
-          ? "در حال همگام‌سازی"
-          : "در انتظار همگام‌سازی";
 }

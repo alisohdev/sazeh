@@ -47,22 +47,6 @@ export type DraftCreateCommand = z.infer<typeof DraftCreateCommandSchema>;
 export type ServerDraft = z.infer<typeof ServerDraftSchema>;
 export type DraftAcknowledgement = z.infer<typeof DraftAcknowledgementSchema>;
 
-export type DraftView = {
-  id: string;
-  projectId?: string;
-  text: string;
-  savedAt: string;
-  syncState:
-    | "PENDING"
-    | "SENDING"
-    | "SYNCED"
-    | "AUTH_REQUIRED"
-    | "CONFLICT"
-    | "VALIDATION_FAILED"
-    | "RETRY_PENDING";
-  problem?: string;
-};
-
 export const UsernameSchema = z
   .string()
   .trim()
@@ -170,73 +154,28 @@ export const ProjectBudgetSchema = z.object({
   baselineToman: TomanSchema,
   version: z.number().int().positive(),
 });
-export const DirectoryCommandSchema = z
+export const ProjectBudgetEditSchema = z
   .object({
-    commandId: UuidSchema,
-    entityId: UuidSchema,
+    id: UuidSchema,
+    category: z.string().trim().min(1).max(100),
+    amountToman: TomanSchema,
     expectedVersion: z.number().int().nonnegative(),
-    kind: z.enum([
-      "PROJECT_CREATE",
-      "PROJECT_UPDATE",
-      "PROJECT_LIFECYCLE",
-      "CONTACT_CREATE",
-      "CONTACT_UPDATE",
-      "CONTACT_LIFECYCLE",
-      "ENGAGEMENT_CREATE",
-      "ENGAGEMENT_UPDATE",
-      "BUDGET_SET",
-    ]),
-    payload: z.record(z.string(), z.unknown()),
   })
   .strict();
-export const DirectoryAcknowledgementSchema = z.object({
-  protocolVersion: z.literal(1),
-  commandId: UuidSchema,
-  entity: z.unknown(),
-  revision: z.string(),
-  replayed: z.boolean(),
-});
-export const DirectoryBootstrapItemSchema = z.object({
-  entityType: z.enum(["PROJECT", "CONTACT", "ENGAGEMENT", "BUDGET", "MATERIAL"]),
-  entity: z.record(z.string(), z.unknown()),
-});
-export const DirectoryBootstrapSchema = z.object({
-  protocolVersion: z.literal(1),
-  snapshotId: UuidSchema,
-  cursor: z.string().regex(/^\d+$/),
-  items: z.array(DirectoryBootstrapItemSchema),
-  nextCursor: z.string().nullable(),
-});
-export const DirectoryChangesSchema = z.object({
-  changes: z.array(
-    z.object({
-      revision: z.number().int().positive(),
-      entityType: z.enum([
-        "PROJECT",
-        "CONTACT",
-        "ENGAGEMENT",
-        "BUDGET",
-        "MATERIAL",
-        "WORKFORCE_RECORD",
-        "PROCUREMENT_DOCUMENT",
-        "FINANCE_RECORD",
-      ]),
-      entityId: UuidSchema,
-      snapshot: z.record(z.string(), z.unknown()),
-    }),
-  ),
-  cursor: z.string().regex(/^\d+$/),
-  highWatermark: z.string().regex(/^\d+$/),
-  hasMore: z.boolean(),
-});
+export type DirectoryMutationKind =
+  | "PROJECT_CREATE"
+  | "PROJECT_UPDATE"
+  | "PROJECT_LIFECYCLE"
+  | "CONTACT_CREATE"
+  | "CONTACT_UPDATE"
+  | "CONTACT_LIFECYCLE"
+  | "ENGAGEMENT_CREATE"
+  | "ENGAGEMENT_UPDATE"
+  | "BUDGET_SET";
 export type Contact = z.infer<typeof ContactSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 export type Engagement = z.infer<typeof EngagementSchema>;
 export type ProjectBudget = z.infer<typeof ProjectBudgetSchema>;
-export type DirectoryCommand = z.infer<typeof DirectoryCommandSchema>;
-export type DirectoryAcknowledgement = z.infer<typeof DirectoryAcknowledgementSchema>;
-export type DirectoryBootstrap = z.infer<typeof DirectoryBootstrapSchema>;
-export type DirectoryChanges = z.infer<typeof DirectoryChangesSchema>;
 
 const WorkforceQuantitySchema = z
   .string()
@@ -469,7 +408,6 @@ const ProcurementDocumentCommandSchema = z
     commandId: UuidSchema,
     entityId: UuidSchema,
     expectedVersion: z.number().int().nonnegative(),
-    dependencyIds: z.array(UuidSchema).max(100).default([]),
     input: ProcurementDocumentInputSchema,
   })
   .strict();
@@ -492,7 +430,7 @@ const MaterialLifecycleCommandSchema = z
     reason: ProcurementTextSchema,
   })
   .strict();
-export const ProcurementSyncCommandSchema = z.discriminatedUnion("commandType", [
+export const ProcurementSaveCommandSchema = z.discriminatedUnion("commandType", [
   ProcurementDocumentCommandSchema,
   MaterialUpsertCommandSchema,
   MaterialLifecycleCommandSchema,
@@ -521,7 +459,7 @@ export const ProcurementReportFilterSchema = z
 export type MaterialInput = z.infer<typeof MaterialInputSchema>;
 export type Material = z.infer<typeof MaterialSchema>;
 export type ProcurementDocumentInput = z.infer<typeof ProcurementDocumentInputSchema>;
-export type ProcurementSyncCommand = z.infer<typeof ProcurementSyncCommandSchema>;
+export type ProcurementSaveCommand = z.infer<typeof ProcurementSaveCommandSchema>;
 export type ProcurementFinalizeCommand = z.infer<typeof ProcurementFinalizeCommandSchema>;
 export type ProcurementReverseCommand = z.infer<typeof ProcurementReverseCommandSchema>;
 export type ProcurementReportFilter = z.infer<typeof ProcurementReportFilterSchema>;

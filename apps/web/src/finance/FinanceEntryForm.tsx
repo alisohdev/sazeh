@@ -17,8 +17,10 @@ export function FinanceEntryForm({
   action,
   report,
   contacts,
+  disabled,
 }: Pick<ReturnType<typeof useFinance>, "save" | "action" | "report"> & {
   contacts: DirectoryRecord[];
+  disabled: boolean;
 }) {
   return (
     <form
@@ -105,7 +107,7 @@ export function FinanceEntryForm({
             <option value="DECREASE">کاهش (فقط اصلاح قرارداد)</option>
           </select>
         </Field>
-        <Button disabled={action.isPending}>ذخیره پیش‌نویس</Button>
+        <Button disabled={disabled || action.isPending}>ثبت پیش‌نویس روی سرور</Button>
       </FieldGroup>
     </form>
   );

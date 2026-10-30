@@ -15,7 +15,7 @@ import {
   type FinanceAction,
   type FinanceReverse,
 } from "@sazeh/contracts";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { DATABASE, type Database } from "../db/database.module.js";
 import {
   attachments,
@@ -24,8 +24,6 @@ import {
   projects,
   contacts,
   businessAudit,
-  syncChanges,
-  syncRevision,
 } from "../db/schema.js";
 import { claimsFor, requireLiveSession, type Principal } from "../identity/identity.service.js";
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -287,19 +285,6 @@ export class FinanceService {
       reason,
       beforeValue: before,
       afterValue: after,
-    });
-    const [next] = await tx
-      .update(syncRevision)
-      .set({ revision: sql`${syncRevision.revision} + 1` })
-      .where(eq(syncRevision.singleton, 1))
-      .returning();
-    if (!next) throw new Error("Sync revision row is missing");
-    await tx.insert(syncChanges).values({
-      revision: next.revision,
-      entityType: "FINANCE_RECORD",
-      entityId: after.id,
-      snapshot: after,
-      actorUserId: actor.userId,
     });
   }
 

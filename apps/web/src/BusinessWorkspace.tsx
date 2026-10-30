@@ -1,40 +1,28 @@
+import { emptyDirectory } from "./business/empty-directory";
 import { EvidenceRepository } from "./finance/RecordEvidence";
-import { FinanceDashboard } from "./finance/FinanceDashboard";
-import { useReducer } from "react";
+import { lazy, Suspense, useReducer } from "react";
 import type { User } from "@sazeh/contracts";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AppController } from "./app/useAppController";
-import type { DraftWorkspace } from "./drafts/draft-repository";
+import type { WorkspaceRepository } from "./data/workspace-repository";
 import { BusinessTabs } from "./business/components/BusinessTabs";
 import { ProjectDetailPage } from "./business/components/ProjectDetailPage";
-import { WorkspaceHeader } from "./business/components/WorkspaceHeader";
 import { selectDirectory } from "./business/selectors";
 import { initialWorkspaceState, workspaceReducer } from "./business/workspace-state";
-import type { DirectoryRecord, WorkspaceDirectoryData, WorkspaceTab } from "./business/types";
+import type { DirectoryRecord, WorkspaceTab } from "./business/types";
 import { useBusinessDirectory } from "./business/useBusinessDirectory";
 import { WorkforceWorkspace } from "./workforce/WorkforceWorkspace";
 import { ProcurementWorkspace } from "./procurement/ProcurementWorkspace";
-
-type Page = WorkspaceTab | "project" | "workforce" | "procurement";
-type NoteController = Pick<AppController, "drafts" | "saveDraft" | "saving" | "exportPending">;
+const AnalyticsWorkspace = lazy(() =>
+  import("./finance/AnalyticsWorkspace").then((module) => ({ default: module.AnalyticsWorkspace })),
+);
+type Page = WorkspaceTab | "project" | "workforce" | "procurement" | "analytics";
 type Props = {
   user: User;
-  repository: DraftWorkspace;
+  repository: WorkspaceRepository;
   locked: boolean;
   online: boolean;
   onStatus: (message: string) => void;
   page: Page;
-  notes?: NoteController;
-};
-
-const emptyDirectory: WorkspaceDirectoryData = {
-  projects: [],
-  contacts: [],
-  engagements: [],
-  budgets: [],
-  materials: [],
-  lastSync: "",
-  pending: 0,
 };
 
 export function BusinessWorkspace(props: Props) {
@@ -45,7 +33,7 @@ export function BusinessWorkspace(props: Props) {
   );
 }
 function BusinessWorkspaceContent(props: Props) {
-  const { user, repository, locked, online, onStatus, page, notes } = props;
+  const { user, repository, locked, online, onStatus, page } = props;
   const [view, dispatch] = useReducer(workspaceReducer, initialWorkspaceState);
   const navigate = useNavigate();
   const { projectId } = useParams();
@@ -68,13 +56,31 @@ function BusinessWorkspaceContent(props: Props) {
     return saved;
   }
 
+  if (page === "analytics") {
+    return (
+      <Suspense
+        fallback={
+          <p role="status" className="p-6">
+            در حال آماده‌سازی گزارش‌ها…
+          </p>
+        }
+      >
+        <AnalyticsWorkspace
+          repository={repository}
+          userId={user.id}
+          online={online && !locked}
+          projects={data.projects}
+        />
+      </Suspense>
+    );
+  }
+
   if (page === "project") {
     return (
       <ProjectDetailPage
         userId={user.id}
         project={data.projects.find((row) => row.id === projectId)}
         data={data}
-        notes={notes}
         locked={locked}
         online={online}
         repository={repository}
@@ -113,21 +119,7 @@ function BusinessWorkspaceContent(props: Props) {
       className="mx-auto grid w-full max-w-7xl gap-5 px-4 py-6 sm:px-6 lg:px-8 lg:py-8"
       dir="rtl"
     >
-      <WorkspaceHeader
-        displayName={user.displayName}
-        lastSync={data.lastSync}
-        pending={data.pending}
-        locked={locked}
-        onSync={() => void directory.syncAgain()}
-      />
-      {page === "projects" && (
-        <FinanceDashboard
-          repository={repository}
-          userId={user.id}
-          projectId=""
-          online={online && !locked}
-        />
-      )}
+      {directory.error && <p role="alert">{directory.error.message}</p>}
       <BusinessTabs
         tab={page}
         filter={view.filter}
@@ -137,9 +129,6 @@ function BusinessWorkspaceContent(props: Props) {
         visibleProjects={selectedData.visibleProjects}
         visibleContacts={selectedData.visibleContacts}
         activeEngagements={selectedData.activeEngagements}
-        serverProjectCount={selectedData.serverProjects.length}
-        workerCount={selectedData.workerCount}
-        pendingProjectCount={selectedData.pendingProjectCount}
         owners={selectedData.owners}
         workers={selectedData.workers}
         selectedProject={
@@ -173,10 +162,6 @@ function BusinessWorkspaceContent(props: Props) {
         onLinkProject={(row) => select(row, "engagements")}
         onContactEdit={(row) => select(row, "contacts")}
         onContactLifecycle={(row) => void directory.setLifecycle(row, "CONTACT")}
-        onKeepServer={(row) => void directory.keepServer(row)}
-        onReviseProject={(row) => select(row, "projects")}
-        onReviseContact={(row) => select(row, "contacts")}
-        onReviseEngagement={(row) => select(row, "engagements")}
       />
       {directory.isLoading && (
         <p role="status" className="text-sm text-muted-foreground">

@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/error-message";
 import { useReducer, type FormEvent } from "react";
 import type { MaterialInput } from "@sazeh/contracts";
 import { ArchiveRestoreIcon, PencilIcon } from "lucide-react";
@@ -53,10 +54,10 @@ export function MaterialDirectory({ materials, locked, onSave, onLifecycle }: Pr
         state.editing?.id,
         state.editing?.version,
       );
-      update({ editing: undefined, message: "مصالح روی دستگاه ذخیره شد." });
+      update({ editing: undefined, message: "مصالح روی سرور ثبت شد." });
       event.currentTarget.reset();
     } catch (error) {
-      update({ message: error instanceof Error ? error.message : "ذخیره مصالح انجام نشد." });
+      update({ message: errorMessage(error) });
     } finally {
       update({ saving: false });
     }
@@ -99,11 +100,7 @@ export function MaterialDirectory({ materials, locked, onSave, onLifecycle }: Pr
                   <span className="text-xs text-muted-foreground">واحد پایه: {item.baseUnit}</span>
                 </div>
                 <Badge variant={item.archived ? "outline" : "secondary"}>
-                  {item.archived
-                    ? "بایگانی"
-                    : item.syncState === "SYNCED"
-                      ? "فعال"
-                      : "در انتظار همگام‌سازی"}
+                  {item.archived ? "بایگانی" : "فعال"}
                 </Badge>
                 <Button
                   type="button"

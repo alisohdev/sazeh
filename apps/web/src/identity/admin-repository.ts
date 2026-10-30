@@ -1,5 +1,5 @@
 import { UserSchema, type User } from "@sazeh/contracts";
-import { authClient } from "./auth-client";
+import { authClient, ApiError } from "./auth-client";
 
 export async function listAdmins(): Promise<User[]> {
   return UserSchema.array().parse(record(await request("/api/v1/admins"))?.admins);
@@ -52,7 +52,11 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
       body && typeof body === "object" && "message" in body && typeof body.message === "string"
         ? body.message
         : "درخواست مدیریت حساب انجام نشد.";
-    throw new Error(message);
+    const code =
+      body && typeof body === "object" && "code" in body && typeof body.code === "string"
+        ? body.code
+        : "REQUEST_FAILED";
+    throw new ApiError(message, response.status, code);
   }
   return body;
 }

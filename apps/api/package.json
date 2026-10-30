@@ -18,14 +18,16 @@
     "verify:performance": "node --env-file-if-exists=../../.env --import tsx scripts/verify-performance.ts",
     "verify:browser": "node --env-file-if-exists=../../.env --import tsx scripts/verify-browser.ts",
     "verify:m3": "node --env-file-if-exists=../../.env --import tsx scripts/verify-m3.ts",
-    "serve": "node --env-file-if-exists=../../.env dist/main.js"
+    "serve": "node --env-file-if-exists=../../.env dist/main.js",
+    "verify:m4": "node --env-file-if-exists=../../.env --import tsx scripts/verify-m4.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1158.0",
-    "@sazeh/contracts": "workspace:*",
+    "@aws-sdk/s3-request-presigner": "3.1158.0",
     "@nestjs/common": "12.3.2",
     "@nestjs/core": "12.3.2",
     "@nestjs/platform-node": "12.3.2",
+    "@sazeh/contracts": "workspace:*",
     "argon2": "0.45.1",
     "drizzle-orm": "0.45.4",
     "postgres": "3.4.9",

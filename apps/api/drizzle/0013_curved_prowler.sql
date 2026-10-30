@@ -1,0 +1,4 @@
+ALTER TABLE "finance_records" ADD CONSTRAINT "finance_kind_check" CHECK ("finance_records"."kind" IN ('EXPENSE','EXPENSE_PAYMENT','CONTRACT_AMENDMENT','OWNER_CLAIM','OWNER_RECEIPT'));--> statement-breakpoint
+ALTER TABLE "finance_records" ADD CONSTRAINT "finance_status_check" CHECK ("finance_records"."status" IN ('DRAFT','SUBMITTED','REJECTED','FINALIZED','REVERSED'));--> statement-breakpoint
+ALTER TABLE "finance_records" ADD CONSTRAINT "finance_source_check" CHECK (("finance_records"."kind"='EXPENSE_PAYMENT') = ("finance_records"."source_id" IS NOT NULL));--> statement-breakpoint
+ALTER TABLE "finance_records" ADD CONSTRAINT "finance_reversal_reason_check" CHECK (("finance_records"."reversal_of_id" IS NULL AND "finance_records"."reversal_reason" IS NULL) OR ("finance_records"."reversal_of_id" IS NOT NULL AND length(btrim("finance_records"."reversal_reason")) BETWEEN 1 AND 1000));

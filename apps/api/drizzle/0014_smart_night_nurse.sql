@@ -1,0 +1,1 @@
+ALTER TABLE "finance_records" ADD COLUMN "supplier_billed" boolean DEFAULT false NOT NULL;

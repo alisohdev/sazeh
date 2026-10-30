@@ -1,0 +1,250 @@
+pnpm.cmd : $ pnpm lint && pnpm typecheck && pnpm format:check && pnpm verify:database && pnpm verify:bootstrap && pnpm 
+build && pnpm storage:verify && pnpm verify:api && pnpm verify:m3 && pnpm verify:m4 && pnpm verify:browser
+At line:2 char:1
++ pnpm.cmd verify:m0 *> output/m4/verify-m0.log; $verificationExit=$LAS ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ pnpm lint && ... verify:browser:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+$ eslint .
+$ pnpm --filter @sazeh/contracts typecheck && pnpm --filter @sazeh/api typecheck && pnpm --filter @sazeh/web typecheck
+$ tsc --noEmit -p tsconfig.json
+$ tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.vercel.json
+$ tsc --noEmit -p tsconfig.json
+$ prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+$ pnpm db:migrate && pnpm db:migrate && pnpm db:seed && pnpm db:seed
+$ pnpm --filter @sazeh/api db:migrate
+$ node --env-file-if-exists=../../.env --import tsx scripts/migrate.ts
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P06',
+  message: 'schema "drizzle" already exists, skipping',
+  file: 'schemacmds.c',
+  line: '132',
+  routine: 'CreateSchemaCommand'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P07',
+  message: 'relation "__drizzle_migrations" already exists, skipping',
+  file: 'parse_utilcmd.c',
+  line: '207',
+  routine: 'transformCreateStmt'
+}
+Database migrations are current.
+$ pnpm --filter @sazeh/api db:migrate
+$ node --env-file-if-exists=../../.env --import tsx scripts/migrate.ts
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P06',
+  message: 'schema "drizzle" already exists, skipping',
+  file: 'schemacmds.c',
+  line: '132',
+  routine: 'CreateSchemaCommand'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P07',
+  message: 'relation "__drizzle_migrations" already exists, skipping',
+  file: 'parse_utilcmd.c',
+  line: '207',
+  routine: 'transformCreateStmt'
+}
+Database migrations are current.
+$ pnpm --filter @sazeh/api db:seed
+$ node --env-file-if-exists=../../.env --import tsx scripts/seed.ts
+Synthetic legacy M0 draft ready (00000000-0000-4000-8000-000000000001); owner remains unset.
+$ pnpm --filter @sazeh/api db:seed
+$ node --env-file-if-exists=../../.env --import tsx scripts/seed.ts
+Synthetic legacy M0 draft ready (00000000-0000-4000-8000-000000000001); owner remains unset.
+$ pnpm --filter @sazeh/api verify:bootstrap
+$ node --env-file-if-exists=../../.env --import tsx scripts/verify-bootstrap.ts
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42622',
+  message: 'identifier "supplier_payment_allocations_payment_document_id_invoice_document_id_pk" will be truncated to "supplier_payment_allocations_payment_document_id_invoice_docume"',
+  file: 'scansup.c',
+  line: '99',
+  routine: 'truncate_identifier'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42622',
+  message: 'identifier "procurement_documents_source_document_id_procurement_documents_id_fk" will be truncated to "procurement_documents_source_document_id_procurement_documents_"',
+  file: 'scansup.c',
+  line: '99',
+  routine: 'truncate_identifier'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42622',
+  message: 'identifier "procurement_documents_reversal_of_id_procurement_documents_id_fk" will be truncated to "procurement_documents_reversal_of_id_procurement_documents_id_f"',
+  file: 'scansup.c',
+  line: '99',
+  routine: 'truncate_identifier'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42622',
+  message: 'identifier "supplier_payment_allocations_payment_document_id_procurement_documents_id_fk" will be truncated to "supplier_payment_allocations_payment_document_id_procurement_do"',
+  file: 'scansup.c',
+  line: '99',
+  routine: 'truncate_identifier'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42622',
+  message: 'identifier "supplier_payment_allocations_invoice_document_id_procurement_documents_id_fk" will be truncated to "supplier_payment_allocations_invoice_document_id_procurement_do"',
+  file: 'scansup.c',
+  line: '99',
+  routine: 'truncate_identifier'
+}
+Bootstrap verification passed: one concurrent superuser is created and only its Argon2id hash is stored.
+$ pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build
+$ tsc -p tsconfig.json
+$ tsc -p tsconfig.build.json
+$ node ../../scripts/generate-pwa-icons.mjs && vite build
+vite v8.3.5 building client environment for production...
+transforming...
+✓ 2879 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/manifest.webmanifest                          0.47 kB
+dist/index.html                                    0.72 kB │ gzip:   0.44 kB
+dist/assets/index-DTBPWh2p.css                    67.52 kB │ gzip:  13.00 kB
+dist/assets/workbox-window.prod.es5-Bd17z0YL.js    5.65 kB │ gzip:   2.20 kB
+dist/assets/index-uQN-xJxi.js                    993.44 kB │ gzip: 290.83 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: 
+https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 3.25s
+
+PWA v2.0.0
+mode      generateSW
+precache  16 entries (1190.39 KiB)
+files generated
+  dist/sw.js
+  dist/workbox-2fbc6a65.js
+$ pnpm --filter @sazeh/api storage:verify
+$ node --env-file-if-exists=../../.env --import tsx scripts/storage-verify.ts
+S3-compatible attachment storage passed put/get verification.
+$ pnpm --filter @sazeh/api verify:api
+$ node --env-file-if-exists=../../.env --import tsx scripts/verify-api.ts
+API M1a/M1b/M2 verification passed: identity and account lifecycle, private note receipts, shared directory APIs and sync recovery, workforce decimal snapshots, LAB01–04 balances, idempotent posting, concurrent finalization, reversals and account isolation.
+API verification accounts, sessions, receipts and drafts were cleaned up.
+$ pnpm db:migrate && pnpm --filter @sazeh/api verify:m3
+$ pnpm --filter @sazeh/api db:migrate
+$ node --env-file-if-exists=../../.env --import tsx scripts/migrate.ts
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P06',
+  message: 'schema "drizzle" already exists, skipping',
+  file: 'schemacmds.c',
+  line: '132',
+  routine: 'CreateSchemaCommand'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P07',
+  message: 'relation "__drizzle_migrations" already exists, skipping',
+  file: 'parse_utilcmd.c',
+  line: '207',
+  routine: 'transformCreateStmt'
+}
+Database migrations are current.
+$ node --env-file-if-exists=../../.env --import tsx scripts/verify-m3.ts
+M3 verification passed: STOCK01-05, FIN01, replay/conflict, duplicate finalization and source rejection, partial-value conservation, filtered reports, COR02, concurrency, and rounding.
+$ pnpm db:migrate && pnpm --filter @sazeh/api verify:m4
+$ pnpm --filter @sazeh/api db:migrate
+$ node --env-file-if-exists=../../.env --import tsx scripts/migrate.ts
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P06',
+  message: 'schema "drizzle" already exists, skipping',
+  file: 'schemacmds.c',
+  line: '132',
+  routine: 'CreateSchemaCommand'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P07',
+  message: 'relation "__drizzle_migrations" already exists, skipping',
+  file: 'parse_utilcmd.c',
+  line: '207',
+  routine: 'transformCreateStmt'
+}
+Database migrations are current.
+$ node --env-file-if-exists=../../.env --import tsx scripts/verify-m4.ts
+M4 evidence: ticket issued
+M4 evidence: uploaded
+M4 evidence: completing
+M4 PostgreSQL passed: FIN02, FIN03, FIN04, drafts excluded, immutable replay, changed-body rejection, concurrent posting, dependency reversal, reversal replay.
+$ pnpm --filter @sazeh/api verify:browser
+$ node --env-file-if-exists=../../.env --import tsx scripts/verify-browser.ts
+[WebServer] (node:8300) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:3864) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build 
+&& pnpm --filter @sazeh/api --filter @sazeh/web --parallel serve
+[WebServer] (node:5208) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.json
+[WebServer] (node:3364) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ tsc -p tsconfig.build.json[WebServer] 
+[WebServer] (node:12068) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ node ../../scripts/generate-pwa-icons.mjs && vite build
+[WebServer] (node:20168) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [plugin builtin:vite-reporter] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rolldownOptions.output.codeSplitting to improve chunking: 
+https://rolldown.rs/reference/OutputOptions.codeSplitting
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[WebServer] (node:12240) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 15 tests using 1 worker
+
+(node:19996) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 tests\m0\offline.spec.ts:9:5 › authenticated offline drafts survive session expiry, sync once across tabs, and stay private on account switch (13.2s)
+  ok  2 tests\m0\offline.spec.ts:132:5 › authentication rejection pauses both queued drafts until the user signs in again (7.7s)
+  ok  3 tests\m0\recovery.spec.ts:4:5 › startup waits for an ordinary refresh without reporting another tab's logout (1.7s)
+  ok  4 tests\m0\recovery.spec.ts:45:5 › reloading a peer tab during a sync recovers the single pending command (5.7s)
+  ok  5 tests\m0\recovery.spec.ts:90:5 › a surviving tab retries after the syncing tab closes with its request in flight (34.4s)
+  ok  6 tests\m0\recovery.spec.ts:180:5 › holds conflicts and validation failures while retrying transient failures (10.5s)
+  ok  7 tests\m1b\directory.spec.ts:7:5 › offline directory sync orders parents first and presents a 360 px Persian overview (8.3s)
+  ok  8 tests\m1b\directory.spec.ts:142:5 › directory conflicts show local and server values and support both resolutions (4.5s)
+  ok  9 tests\m1b\directory.spec.ts:258:5 › expired change feed rebuild preserves local drafts and queued commands (3.1s)
+  ok 10 tests\m1b\directory.spec.ts:307:5 › a delayed create acknowledgment preserves a newer local edit and its dependent command (2.9s)
+  ok 11 tests\m1b\directory.spec.ts:377:5 › a surviving tab retries a directory upload after its sending tab closes (33.0s)
+  ok 12 tests\m2\workforce.spec.ts:7:5 › offline workforce draft survives refresh, replays a lost reply, and requires online finalization (35.3s)
+  ok 13 tests\m2\workforce.spec.ts:196:5 › failed workforce upload preserves an edit made while the request is pending (32.7s)
+  ok 14 tests\m3\procurement.spec.ts:7:5 › mobile procurement draft survives offline, replays immutably, and finalizes into stock analytics (8.1s)
+  ok 15 tests\m4\finance.spec.ts:3:5 › FIN02 mobile expense draft survives offline and posts separate partial payment (7.1s)
+
+  15 passed (4.1m)
+Browser M1a/M1b/M2/M3 verification passed: authenticated offline notes and directories, sync recovery, account isolation, parent ordering, conflict resolution, workforce and procurement lost-reply replay, explicit finalization and mobile RTL.

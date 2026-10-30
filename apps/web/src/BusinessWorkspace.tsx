@@ -1,3 +1,4 @@
+import { FinanceDashboard } from "./finance/FinanceDashboard";
 import { useReducer } from "react";
 import type { User } from "@sazeh/contracts";
 import { useNavigate, useParams } from "react-router-dom";
@@ -62,6 +63,7 @@ export function BusinessWorkspace(props: Props) {
   if (page === "project") {
     return (
       <ProjectDetailPage
+        userId={user.id}
         project={data.projects.find((row) => row.id === projectId)}
         data={data}
         notes={notes}
@@ -110,6 +112,14 @@ export function BusinessWorkspace(props: Props) {
         locked={locked}
         onSync={() => void directory.syncAgain()}
       />
+      {page === "projects" && (
+        <FinanceDashboard
+          repository={repository}
+          userId={user.id}
+          projectId=""
+          online={online && !locked}
+        />
+      )}
       <BusinessTabs
         tab={page}
         filter={view.filter}

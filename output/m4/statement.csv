@@ -1,0 +1,10 @@
+id,date,kind,category,cost,cashIn,cashOut,revenue
+"295fbe17-8c56-407e-9c9b-97d6771790d2","2026-10-01","EXPENSE","transport","'-10000","0","0","0"
+"298d68cb-0be7-4c4d-ad3e-06d2eef66942","2026-10-01","EXPENSE","transport","10000","0","0","0"
+"2aa8213c-3269-4682-a2e3-2c6a84f74d96","2026-10-01","EXPENSE_PAYMENT","transport","0","0","'-4000","0"
+"329e16c1-06be-4646-8518-df4b28651709","2026-10-01","EXPENSE","transport","18000000","0","0","0"
+"37446f10-5cdd-4696-b1ea-cb6348fb27f0","2026-10-01","OWNER_CLAIM","transport","0","0","0","30000000"
+"82ee2618-5a26-47cc-8839-e7f768d96598","2026-10-01","CONTRACT_AMENDMENT","transport","0","0","0","0"
+"91c9a2dd-cb5c-4dfc-bf99-75cb0c011b3d","2026-10-01","EXPENSE_PAYMENT","transport","0","0","4000","0"
+"9e83c052-ac99-4eb6-987b-886481bbc547","2026-10-01","OWNER_RECEIPT","transport","0","20000000","0","0"
+"f7b33a58-e26e-4e1a-8822-9bb19f3fe2a8","2026-10-01","OWNER_RECEIPT","transport","0","20000000","0","0"

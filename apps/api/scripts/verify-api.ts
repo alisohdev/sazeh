@@ -23,8 +23,11 @@ import {
   syncChanges,
   syncRevision,
   users,
+  workforceRecords,
+  workforceReceipts,
 } from "../src/db/schema.js";
 import { ACCESS_SECONDS } from "../src/identity/tokens.js";
+import { multiplyQuantityAndRate } from "../src/workforce/workforce.service.js";
 
 type LoginResult = {
   accessToken: string;
@@ -362,6 +365,7 @@ async function main(): Promise<void> {
       201,
       "next-day period may be ongoing",
     );
+    const m2Workers: Record<string, string> = {};
     const additionalTypes = ["QUANTITY", "MONTHLY", "FIXED_CONTRACT", "MANUAL"] as const;
     for (const type of additionalTypes) {
       const response = await adminA.request("/api/v1/contacts", {
@@ -376,6 +380,7 @@ async function main(): Promise<void> {
       });
       assert.equal(response.status, 201, `${type} worker contact is created`);
       const typeWorker = (await response.json()) as { id: string };
+      m2Workers[type] = typeWorker.id;
       const typeResult = await adminA.request("/api/v1/engagements", {
         method: "POST",
         body: JSON.stringify({
@@ -451,6 +456,334 @@ async function main(): Promise<void> {
       id: string;
       version: number;
     };
+
+    assert.equal(multiplyQuantityAndRate("3", "1000000"), "3000000");
+    assert.equal(
+      multiplyQuantityAndRate("2.5", "1001"),
+      "2503",
+      "decimal multiplication rounds half up to one toman",
+    );
+    const labDate = "2026-10-29";
+    const labEarningCommand = {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: project.id,
+        workerId: worker.id,
+        businessDate: labDate,
+        engagementType: "DAILY",
+        quantity: "3",
+        rateToman: "1000000",
+        description: "سه روز کار روزانه",
+      },
+    };
+    const labEarning = await createWorkforceDraft(adminA, labEarningCommand);
+    assert.equal(
+      labEarning.amountToman,
+      "3000000",
+      "server calculates the earning from decimal quantity and snapshotted rate",
+    );
+    assert.equal(labEarning.rateToman, "1000000");
+    const replayedCreate = await submitWorkforceDraft(adminA, labEarningCommand);
+    assert.equal(replayedCreate.ok, true, "lost draft reply is safely replayed");
+    const replayedRecord = replayedCreate.result as { id?: string; result?: { id: string } };
+    assert.equal(replayedRecord.id ?? replayedRecord.result?.id, labEarning.id);
+    const changedWorkforceBody = await submitWorkforceDraft(adminA, {
+      ...labEarningCommand,
+      input: { ...labEarningCommand.input, rateToman: "900000" },
+    });
+    assert.equal(
+      changedWorkforceBody.status,
+      409,
+      "a changed body cannot reuse a workforce command ID",
+    );
+    const labEarningFinalize = { commandId: randomUUID(), expectedVersion: 1 };
+    await finalizeWorkforce(adminA, labEarning.id as string, labEarningFinalize);
+    for (let retry = 0; retry < 10; retry += 1) {
+      const replay = await adminA.request(`/api/v1/workforce/drafts/${labEarning.id}/finalize`, {
+        method: "POST",
+        body: JSON.stringify(labEarningFinalize),
+      });
+      assert.equal(replay.status, 201, "lost finalization reply replays idempotently");
+    }
+    const deduction = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "DEDUCTION",
+        projectId: project.id,
+        workerId: worker.id,
+        businessDate: labDate,
+        amountToman: "200000",
+        description: "کسر ابزار آسیب‌دیده",
+      },
+    });
+    await finalizeWorkforce(adminA, deduction.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    });
+    const advance = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "WORKER_PAYMENT",
+        paymentKind: "ADVANCE",
+        projectId: project.id,
+        workerId: worker.id,
+        businessDate: labDate,
+        amountToman: "500000",
+        description: "مساعدهٔ کارگر",
+      },
+    });
+    await finalizeWorkforce(adminA, advance.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    });
+    const laterPayment = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "WORKER_PAYMENT",
+        paymentKind: "PAYMENT",
+        projectId: project.id,
+        workerId: worker.id,
+        businessDate: labDate,
+        amountToman: "1000000",
+        description: "پرداخت بخشی از دستمزد",
+      },
+    });
+    await finalizeWorkforce(adminA, laterPayment.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    });
+    const labStatement = await workforceStatement(adminA, worker.id, project.id, labDate, labDate);
+    assert.deepEqual(
+      labStatement.totals,
+      {
+        grossEarningsToman: "3000000",
+        deductionsToman: "200000",
+        netEarningsToman: "2800000",
+        paymentsToman: "1500000",
+        remainingBalanceToman: "1300000",
+      },
+      "LAB01: 3,000,000 - 200,000 - 1,500,000 = 1,300,000",
+    );
+    const projectBEarning = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: otherProject.id,
+        workerId: worker.id,
+        businessDate: labDate,
+        engagementType: "DAILY",
+        quantity: "0.4",
+        rateToman: "1000000",
+        description: "کار در پروژهٔ دوم",
+      },
+    });
+    await finalizeWorkforce(adminA, projectBEarning.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    });
+    const projectBStatement = await workforceStatement(
+      adminA,
+      worker.id,
+      otherProject.id,
+      labDate,
+      labDate,
+    );
+    assert.equal(
+      projectBStatement.totals.remainingBalanceToman,
+      "400000",
+      "LAB02: the worker balance is project-specific",
+    );
+    assert.equal(
+      (await workforceStatement(adminA, worker.id, project.id, labDate, labDate)).totals
+        .remainingBalanceToman,
+      "1300000",
+    );
+
+    const sameCommandOtherAccount = await createWorkforceDraft(root, {
+      ...labEarningCommand,
+      recordId: randomUUID(),
+      input: {
+        ...labEarningCommand.input,
+        projectId: otherProject.id,
+        description: "حساب فرمان مستقل مدیر ارشد",
+      },
+    });
+    assert.notEqual(
+      sameCommandOtherAccount.id,
+      labEarning.id,
+      "workforce command receipts are isolated by account",
+    );
+    assert.equal(
+      (await dbRecordCount(databaseUrl, labEarningCommand.commandId, normalA.user.id)).length,
+      1,
+    );
+
+    const rateUpdate = await adminA.request(`/api/v1/engagements/${assigned.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...engagement,
+        defaultRateToman: "1200000",
+        expectedVersion: assigned.version,
+      }),
+    });
+    assert.equal(
+      rateUpdate.status,
+      200,
+      "engagement default rate can change after an earning snapshot",
+    );
+    const nextRateEarning = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: project.id,
+        workerId: worker.id,
+        businessDate: "2026-10-30",
+        engagementType: "DAILY",
+        quantity: "1",
+        rateToman: "1200000",
+        description: "روز کار با نرخ جدید",
+      },
+    });
+    await finalizeWorkforce(adminA, nextRateEarning.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    });
+    assert.equal(nextRateEarning.amountToman, "1200000");
+    const originalSnapshot = await workforceStatement(
+      adminA,
+      worker.id,
+      project.id,
+      labDate,
+      labDate,
+    );
+    assert.equal(
+      originalSnapshot.totals.grossEarningsToman,
+      "3000000",
+      "LAB03: later default rate changes do not alter history",
+    );
+
+    const monthlyId = m2Workers.MONTHLY;
+    assert(monthlyId, "monthly engagement fixture exists");
+    const monthly = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: project.id,
+        workerId: monthlyId,
+        businessDate: labDate,
+        engagementType: "MONTHLY",
+        amountToman: "5000000",
+        description: "دورهٔ ناقص مهر؛ مبلغ مورد تأیید مدیر",
+      },
+    });
+    await finalizeWorkforce(adminA, monthly.id as string, {
+      commandId: randomUUID(),
+      expectedVersion: 1,
+    });
+    assert.equal(
+      (await workforceStatement(adminA, monthlyId, project.id, labDate, labDate)).totals
+        .grossEarningsToman,
+      "5000000",
+      "LAB04: monthly partial period uses only the manager-approved amount",
+    );
+
+    const concurrent = await createWorkforceDraft(adminA, {
+      commandId: randomUUID(),
+      recordId: randomUUID(),
+      expectedVersion: 0,
+      input: {
+        kind: "EARNING",
+        projectId: project.id,
+        workerId: worker.id,
+        businessDate: "2026-10-31",
+        engagementType: "DAILY",
+        quantity: "1",
+        rateToman: "1200000",
+        description: "ثبت هم‌زمان",
+      },
+    });
+    const concurrentFinalizations = await Promise.all(
+      [randomUUID(), randomUUID()].map((commandId) =>
+        adminA.request(`/api/v1/workforce/drafts/${concurrent.id}/finalize`, {
+          method: "POST",
+          body: JSON.stringify({ commandId, expectedVersion: 1 }),
+        }),
+      ),
+    );
+    assert.deepEqual(
+      concurrentFinalizations.map((response) => response.status).sort(),
+      [201, 409],
+      "concurrent finalization creates one posting",
+    );
+    const reversalCommand = {
+      commandId: randomUUID(),
+      expectedVersion: 2,
+      reason: "تصحیح کسر ثبت‌شده",
+    };
+    const reversalResponse = await adminA.request(
+      `/api/v1/workforce/records/${deduction.id}/reverse`,
+      {
+        method: "POST",
+        body: JSON.stringify(reversalCommand),
+      },
+    );
+    assert.equal(
+      reversalResponse.status,
+      201,
+      "a finalized deduction can be reversed with a reason",
+    );
+    const reversalResult = (await reversalResponse.json()) as {
+      original: { status: string };
+      reversal: { id: string; reversalOfId: string; reversalReason: string };
+    };
+    assert.equal(reversalResult.original.status, "REVERSED");
+    assert.equal(reversalResult.reversal.reversalOfId, deduction.id);
+    assert.equal(reversalResult.reversal.reversalReason, reversalCommand.reason);
+    const reversalReplay = await adminA.request(
+      `/api/v1/workforce/records/${deduction.id}/reverse`,
+      {
+        method: "POST",
+        body: JSON.stringify(reversalCommand),
+      },
+    );
+    assert.equal(
+      reversalReplay.status,
+      201,
+      "lost reversal replies replay without another inverse record",
+    );
+    const reversalCount = await dbRecordCount(
+      databaseUrl,
+      deduction.id as string,
+      normalA.user.id,
+      "reversalOfId",
+    );
+    assert.equal(
+      reversalCount.length,
+      1,
+      "COR01: original record remains and exactly one inverse is linked",
+    );
+    assert.equal(
+      (await workforceStatement(adminA, worker.id, project.id, labDate, labDate)).totals
+        .remainingBalanceToman,
+      "1500000",
+      "reversed deduction changes the balance once",
+    );
+
     const budgetId = randomUUID();
     const budgetCreate = await adminA.request(`/api/v1/projects/${project.id}/budgets`, {
       method: "PUT",
@@ -1377,7 +1710,7 @@ async function main(): Promise<void> {
     }
 
     process.stdout.write(
-      "API M1a/M1b verification passed: identity and account lifecycle, private note receipts, shared project/contact/engagement APIs, archive and date rules, server-derived audit, immutable directory retries, bootstrap recovery and account-scoped receipts.\n",
+      "API M1a/M1b/M2 verification passed: identity and account lifecycle, private note receipts, shared directory APIs and sync recovery, workforce decimal snapshots, LAB01–04 balances, idempotent posting, concurrent finalization, reversals and account isolation.\n",
     );
     verificationSucceeded = true;
   } finally {
@@ -1397,6 +1730,8 @@ async function main(): Promise<void> {
           await tx.delete(businessAudit).where(inArray(businessAudit.actorSessionId, sessionIds));
         await tx.delete(syncChanges).where(inArray(syncChanges.actorUserId, ids));
         await tx.delete(directoryReceipts).where(inArray(directoryReceipts.userId, ids));
+        await tx.delete(workforceReceipts).where(inArray(workforceReceipts.userId, ids));
+        await tx.delete(workforceRecords).where(inArray(workforceRecords.createdBy, ids));
         await tx.delete(engagements).where(inArray(engagements.createdBy, ids));
         await tx.delete(projectBudgets).where(inArray(projectBudgets.updatedBy, ids));
         await tx.delete(projects).where(inArray(projects.createdBy, ids));
@@ -1450,6 +1785,100 @@ async function submitDirectoryCommand(
   assert(result, "queued directory command returns a result");
   assert.equal(result.ok, false, "invalid archived assignment is rejected");
   return result;
+}
+
+async function submitWorkforceDraft(
+  client: ReturnType<typeof makeClient>,
+  command: Record<string, unknown>,
+) {
+  const response = await client.request("/api/v1/workforce/sync/commands", {
+    method: "POST",
+    body: JSON.stringify([command]),
+  });
+  assert.equal(
+    response.status,
+    201,
+    `workforce draft command returns an outcome: ${await response.clone().text()}`,
+  );
+  const body = (await response.json()) as {
+    results: Array<{ ok: boolean; status?: number; result?: unknown; error?: unknown }>;
+  };
+  const result = body.results[0];
+  assert(result, "workforce command returns one result");
+  return result;
+}
+
+async function createWorkforceDraft(
+  client: ReturnType<typeof makeClient>,
+  command: Record<string, unknown>,
+) {
+  const outcome = await submitWorkforceDraft(client, command);
+  assert.equal(outcome.ok, true, `workforce draft is accepted: ${JSON.stringify(outcome.error)}`);
+  return outcome.result as Record<string, unknown>;
+}
+
+async function finalizeWorkforce(
+  client: ReturnType<typeof makeClient>,
+  recordId: string,
+  command: { commandId: string; expectedVersion: number },
+) {
+  const response = await client.request(`/api/v1/workforce/drafts/${recordId}/finalize`, {
+    method: "POST",
+    body: JSON.stringify(command),
+  });
+  assert.equal(
+    response.status,
+    201,
+    `workforce finalization succeeds: ${await response.clone().text()}`,
+  );
+  return response.json();
+}
+
+async function workforceStatement(
+  client: ReturnType<typeof makeClient>,
+  workerId: string,
+  projectId: string,
+  from: string,
+  to: string,
+) {
+  const response = await client.request(
+    `/api/v1/workforce/records?workerId=${workerId}&projectId=${projectId}&from=${from}&to=${to}`,
+  );
+  assert.equal(response.status, 200, `worker statement loads: ${await response.clone().text()}`);
+  return response.json() as Promise<{
+    totals: {
+      grossEarningsToman: string;
+      deductionsToman: string;
+      netEarningsToman: string;
+      paymentsToman: string;
+      remainingBalanceToman: string;
+    };
+    pending: { count: number; amountToman: string };
+    entries: Array<{ id: string; status: string }>;
+  }>;
+}
+
+async function dbRecordCount(
+  databaseUrl: string,
+  value: string,
+  userId: string,
+  field?: "reversalOfId",
+) {
+  const sqlClient = postgres(databaseUrl, { max: 1 });
+  try {
+    const database = drizzle(sqlClient, { schema });
+    if (field)
+      return await database
+        .select()
+        .from(workforceRecords)
+        .where(eq(workforceRecords.reversalOfId, value));
+    return await database
+      .select()
+      .from(workforceReceipts)
+      .where(and(eq(workforceReceipts.commandId, value), eq(workforceReceipts.userId, userId)));
+  } finally {
+    await sqlClient.end({ timeout: 5 });
+  }
 }
 
 function makeClient(base: string, origin: string) {

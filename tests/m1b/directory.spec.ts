@@ -53,7 +53,7 @@ test("offline directory sync orders parents first and presents a 360 px Persian 
   await page.getByLabel("نرخ پیش‌فرض (تومان)").fill("۳۵۰۰۰۰");
   await page.locator('input[name="startsOn"]').fill("۱۴۰۵/۰۷/۰۶");
   await page.getByRole("button", { name: "ذخیرهٔ همکاری", exact: true }).click();
-  await expect(page.getByText(`${workerName} · ${projectName}`)).toBeVisible();
+  await expect(page.getByRole("heading", { name: `${workerName} · ${projectName}` })).toBeVisible();
   await page.screenshot({
     path: resolve(screenshotDirectory, "m1b-mobile-offline-queue.png"),
     fullPage: true,
@@ -67,7 +67,7 @@ test("offline directory sync orders parents first and presents a 360 px Persian 
     .getByRole("tablist", { name: "بخش‌های اطلاعات شرکت" })
     .getByRole("tab", { name: "همکاری‌ها" })
     .click();
-  await expect(page.getByText(`${workerName} · ${projectName}`)).toBeVisible();
+  await expect(page.getByRole("heading", { name: `${workerName} · ${projectName}` })).toBeVisible();
   await page.getByRole("tab", { name: "پروژه‌ها" }).click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 

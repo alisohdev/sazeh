@@ -7,11 +7,13 @@ import { selectDirectory } from "./business/selectors";
 import { initialWorkspaceState, workspaceReducer } from "./business/workspace-state";
 import type { DirectoryRecord, WorkspaceDirectoryData, WorkspaceTab } from "./business/types";
 import { useBusinessDirectory } from "./business/useBusinessDirectory";
+import { WorkforceWorkspace } from "./workforce/WorkforceWorkspace";
 
 type Props = {
   user: User;
   repository: DraftWorkspace;
   locked: boolean;
+  online: boolean;
   onStatus: (message: string) => void;
 };
 
@@ -24,7 +26,7 @@ const emptyDirectory: WorkspaceDirectoryData = {
   pending: 0,
 };
 
-export function BusinessWorkspace({ user, repository, locked, onStatus }: Props) {
+export function BusinessWorkspace({ user, repository, locked, online, onStatus }: Props) {
   const [view, dispatch] = useReducer(workspaceReducer, initialWorkspaceState);
   const directory = useBusinessDirectory({ user, repository, onStatus });
   const data = directory.data ?? emptyDirectory;
@@ -112,6 +114,14 @@ export function BusinessWorkspace({ user, repository, locked, onStatus }: Props)
           فهرست در حال بارگذاری است…
         </p>
       )}
+      <WorkforceWorkspace
+        user={user}
+        repository={repository}
+        data={data}
+        locked={locked}
+        online={online}
+        onStatus={onStatus}
+      />
     </section>
   );
 }

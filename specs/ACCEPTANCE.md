@@ -12,6 +12,10 @@ All fixtures are synthetic. Amounts below are toman. Run calculation tests witho
 | LAB02 | Same worker earns 400,000 in project B | Project A balance unchanged; separate B statement. |
 | LAB03 | Rate later becomes 1,200,000 | LAB01 remains 3,000,000 gross. New entries use new default only. |
 | LAB04 | Monthly partial period manually approved at 5,000,000 | Exactly 5,000,000, no automatic absence/proration rules. |
+| LAB05 | 2.500 units × 1,001; later change the engagement default | Decimal calculation rounds half-up to 2,503 toman; the earning keeps its original quantity and rate snapshot. |
+| LAB06 | One worker has finalized records in two projects and an unfinalized draft | Each project statement reconciles independently; draft amounts remain outside finalized totals and appear in a separate pending section. |
+| LAB07 | Two admins finalize the same draft concurrently with different command IDs | Exactly one finalization succeeds; the other receives a conflict; one finalized effect and audit trail remain. |
+| LAB08 | Retry a successful draft, finalization and reversal after losing each reply | Repeating the same immutable command ID/body returns the prior result; no duplicate record or balance effect. A changed body with the same ID returns 409. |
 | STOCK01 | Receive 100 units @200 then 100 @300; consume 50 | Quantity 150; stock value 37,500; consumed cost 12,500; average 250. |
 | STOCK02 | Transfer 20 of remaining units A -> B | A 130/32,500; B 20/5,000; no company cash/cost created by transfer. |
 | STOCK03 | Return 10 units from STOCK01 consumption | Restore 10 units/value 2,500 to A; net consumption cost becomes 10,000. |
@@ -22,6 +26,7 @@ All fixtures are synthetic. Amounts below are toman. Run calculation tests witho
 | FIN03 | Contract 100m + amendment 20m; approved claim 30m; owner pays 20m; incurred cost 18m | Revised contract 120m; receivable 10m; management earned margin 12m; receipt 20m. Contract remainder is not revenue. |
 | FIN04 | Owner pays 40m against claims 30m | Receivable -10m displayed as advance/credit; no extra 10m earned revenue. |
 | COR01 | Reverse finalized deduction with reason | Original retained, linked inverse recorded, balance/cost recomputed once. |
+| COR03 | Reverse a finalized workforce record twice | First reasoned reversal links an inverse and retains the original; a second reversal is rejected or replays the same command result, never posting a second inverse. |
 | COR02 | Reverse invoice with allocated payment/dependent receipt | Reject with named dependencies; no partial reversal or corrupted totals. |
 | SYNC01 | Save offline, refresh/reopen same installed origin | Draft and outbox remain, clearly local; server balances unchanged. |
 | SYNC02 | Server commits command but reply is lost; retry 10 times | One draft/effect, same entity identity/result. |
@@ -32,6 +37,9 @@ All fixtures are synthetic. Amounts below are toman. Run calculation tests witho
 | SYNC07 | Token expires while offline | Draft capture continues in cached workspace; sync waits for authentication, no credential persistence. |
 | SYNC08 | Global revisions under concurrent commits and paginated pulls | No missed committed changes; tombstones applied; rebuild preserves unsynced work. |
 | SYNC09 | App/service-worker/schema update with pending queue | Queue remains usable or safely held for upgrade; never discarded. |
+| SYNC10 | Edit an earning offline, refresh, reconnect, review and finalize | Local draft and immutable command survive; sync creates a server draft only; manager explicitly finalizes online; finalized totals change only after server acknowledgment. |
+| SYNC11 | Lose the finalization reply, then retry after refresh | Persisted finalization intent retries with the same command ID and produces one posting. |
+| SYNC12 | Switch accounts with pending workforce work | Departure decision includes workforce commands; another admin never uploads or reads the previous account's local outbox. |
 | FILE01 | Upload succeeds but completion reply lost | Retry completion links one verified attachment. |
 | FILE02 | Unauthenticated/disabled user requests attachment | Denied; bucket objects not publicly readable. |
 | LOCAL01 | Toman large values, fractional quantities, Persian digits | Exact server arithmetic and documented rounding; no float drift. |

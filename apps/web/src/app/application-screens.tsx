@@ -1,17 +1,7 @@
 import type { AppController } from "./useAppController";
 
-type LoginProps = Pick<
-  AppController,
-  "online" | "saving" | "message" | "departureElsewhere" | "submitLogin" | "exportLegacyM0"
->;
-export function LoginScreen({
-  online,
-  saving,
-  message,
-  departureElsewhere,
-  submitLogin,
-  exportLegacyM0,
-}: LoginProps) {
+type LoginProps = Pick<AppController, "online" | "saving" | "message" | "submitLogin">;
+export function LoginScreen({ online, saving, message, submitLogin }: LoginProps) {
   return (
     <main className="page-shell auth-shell" dir="rtl">
       <header className="topbar">
@@ -33,7 +23,7 @@ export function LoginScreen({
             <p className="eyebrow">دسترسی امن</p>
             <h2 id="login-heading">ورود مدیر</h2>
           </div>
-          <span className="date-chip">ذخیرهٔ محلی محفوظ</span>
+          <span className="date-chip">اتصال امن به سرور</span>
         </div>
         <form onSubmit={(event) => void submitLogin(event)}>
           <label htmlFor="username">نام کاربری</label>
@@ -52,27 +42,12 @@ export function LoginScreen({
             <span aria-hidden="true">←</span>
           </button>
         </form>
-        {!online && (
-          <p className="save-note">
-            برای ورود تازه به اینترنت وصل شوید. فضای محلی قبلی تا زمان اتصال محفوظ است.
-          </p>
-        )}
+        {!online && <p className="save-note">برای ورود و ثبت اطلاعات به اینترنت متصل شوید.</p>}
         {message && (
           <p className="feedback" role="status">
             {message}
           </p>
         )}
-        {departureElsewhere && (
-          <button className="quiet-button" type="button" onClick={() => window.location.reload()}>
-            بررسی دوبارهٔ فضای کاری
-          </button>
-        )}
-        <div className="legacy-export-control">
-          <button className="quiet-button" type="button" onClick={() => void exportLegacyM0()}>
-            خروجی یادداشت‌های قدیمی و بدون مالک
-          </button>
-          <span>داده‌های M0 به حساب بعدی نسبت داده نمی‌شوند.</span>
-        </div>
       </section>
       <footer className="footer-note">
         <span className="footer-rule" />

@@ -11,6 +11,7 @@ import {
 } from "@nestjs/common";
 import {
   ProcurementFinalizeCommandSchema,
+  ProcurementSaveCommandSchema,
   ProcurementReportFilterSchema,
   ProcurementReverseCommandSchema,
 } from "@sazeh/contracts";
@@ -22,15 +23,26 @@ import { ProcurementService } from "./procurement.service.js";
 @Controller("v1/procurement")
 export class ProcurementController {
   constructor(@Inject(ProcurementService) private readonly procurement: ProcurementService) {}
-
-  @Post("sync/commands")
-  sync(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
-    if (!Array.isArray(body))
+  @Post("drafts")
+  draft(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.save(body, request, "DOCUMENT_UPSERT");
+  }
+  @Post("materials")
+  material(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.save(body, request, "MATERIAL_UPSERT");
+  }
+  @Post("materials/:id/lifecycle")
+  lifecycle(@Param("id") id: string, @Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.save({ ...(body as object), entityId: id }, request, "MATERIAL_LIFECYCLE");
+  }
+  private save(body: unknown, request: AuthenticatedRequest, kind: string) {
+    const command = ProcurementSaveCommandSchema.safeParse(body);
+    if (!command.success || command.data.commandType !== kind)
       throw new BadRequestException({
-        code: "INVALID_BATCH",
-        message: "Expected a list of procurement commands",
+        code: "INVALID_COMMAND",
+        message: "Procurement command is invalid",
       });
-    return this.procurement.sync(principal(request), body);
+    return this.procurement.save(principal(request), command.data);
   }
 
   @Get("materials")

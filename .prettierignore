@@ -3,6 +3,8 @@ dist
 coverage
 playwright-report
 test-results
+output
+.data
 pnpm-lock.yaml
 decisions.tsv
 *.png
@@ -10,9 +12,5 @@ apps/api/drizzle/meta
 graft/.cache
 PRD.md
 DECISIONS.md
-DELIVERY.md
 CLIENT_PROPOSAL_FA.md
-IMPLEMENTATION_BRIEF.md
-SOURCES.md
-adr
 specs

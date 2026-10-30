@@ -1,6 +1,7 @@
+import { errorMessage } from "@/lib/error-message";
 import { PersianDatePicker } from "@/components/persian-date-picker";
-import { useMutation } from "@tanstack/react-query";
-import type { DraftWorkspace } from "@/drafts/draft-repository";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { WorkspaceRepository } from "@/data/workspace-repository";
 import type { FinanceRow } from "./repository";
 import { FinanceInputSchema } from "@sazeh/contracts";
 import { Input } from "@/components/ui/input";
@@ -12,10 +13,12 @@ export function FinanceDraftEditor({
   repository,
 }: {
   row: FinanceRow;
-  repository: DraftWorkspace;
+  repository: WorkspaceRepository;
 }) {
+  const client = useQueryClient();
   const mutation = useMutation({
     networkMode: "always",
+    onSuccess: () => client.invalidateQueries({ queryKey: ["finance", repository.userId] }),
     mutationFn: async (form: FormData) => {
       const input = FinanceInputSchema.parse({
         projectId: row.projectId,
@@ -62,8 +65,8 @@ export function FinanceDraftEditor({
             required
           />
         </label>
-        {mutation.error && <p role="alert">{mutation.error.message}</p>}
-        <Button disabled={mutation.isPending}>ذخیره ویرایش روی دستگاه</Button>
+        {mutation.error && <p role="alert">{errorMessage(mutation.error)}</p>}
+        <Button disabled={mutation.isPending || !navigator.onLine}>ثبت ویرایش روی سرور</Button>
       </form>
     </details>
   );

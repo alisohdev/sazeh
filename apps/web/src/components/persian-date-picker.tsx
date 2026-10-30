@@ -46,7 +46,13 @@ export function PersianDatePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-0" dir="rtl">
-        <Calendar mode="single" selected={date} onSelect={select} autoFocus />
+        <Calendar
+          mode="single"
+          defaultMonth={date ?? new Date()}
+          selected={date}
+          onSelect={select}
+          autoFocus
+        />
         {allowClear && date && (
           <Button
             type="button"

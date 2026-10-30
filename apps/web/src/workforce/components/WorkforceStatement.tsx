@@ -1,29 +1,10 @@
-import type { WorkforceLocalDraft } from "../types";
 import { WorkforceEntryList } from "./WorkforceEntryList";
-import { WorkforcePendingDrafts } from "./WorkforcePendingDrafts";
 import { WorkforceProjectAnalytics } from "./WorkforceProjectAnalytics";
 import { WorkforceStatementFilters } from "./WorkforceStatementFilters";
 import { WorkforceTotalsSummary } from "./WorkforceTotalsSummary";
 import type { StatementProps } from "./statement-types";
 
-function matchesFilter(draft: WorkforceLocalDraft, filter: StatementProps["filter"]): boolean {
-  return (
-    (!filter.workerId || draft.data.workerId === filter.workerId) &&
-    (!filter.projectId || draft.data.projectId === filter.projectId) &&
-    (!filter.from || draft.data.businessDate >= filter.from) &&
-    (!filter.to || draft.data.businessDate <= filter.to)
-  );
-}
-
 export function WorkforceStatement(props: StatementProps) {
-  const localPending = props.localDrafts
-    .filter(
-      (draft) =>
-        draft.syncState !== "SYNCED" &&
-        draft.syncState !== "FINALIZED" &&
-        draft.syncState !== "REVERSED",
-    )
-    .filter((draft) => matchesFilter(draft, props.filter));
   return (
     <div id="workforce-statement" className="grid gap-4" dir="rtl">
       <WorkforceStatementFilters
@@ -50,11 +31,6 @@ export function WorkforceStatement(props: StatementProps) {
           آفلاین هستید؛ ثبت نهایی و گزارش به‌روز در دسترس نیست.
         </p>
       )}
-      <WorkforcePendingDrafts
-        drafts={localPending}
-        pendingServerCount={props.report?.pending.count ?? 0}
-        onEdit={props.onEditLocal}
-      />
       <WorkforceProjectAnalytics rows={props.analytics} onDrillDown={props.onDrillDown} />
       <WorkforceEntryList
         entries={props.report?.entries ?? []}

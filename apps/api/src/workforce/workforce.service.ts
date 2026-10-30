@@ -9,7 +9,6 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
-  WorkforceDraftCommandSchema,
   WorkforceRecordInputSchema,
   WorkforceReportFilterSchema,
   type WorkforceDraftCommand,
@@ -19,15 +18,12 @@ import {
   type WorkforceReverseCommand,
 } from "@sazeh/contracts";
 import { and, asc, eq, gte, lt, lte, sql } from "drizzle-orm";
-import { ZodError } from "zod";
 import { DATABASE, type Database } from "../db/database.module.js";
 import {
   businessAudit,
   contacts,
   engagements,
   projects,
-  syncChanges,
-  syncRevision,
   workforceRecords,
   workforceReceipts,
 } from "../db/schema.js";
@@ -50,24 +46,6 @@ const canonicalJson = (value: unknown): string => {
 @Injectable()
 export class WorkforceService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
-
-  async syncDrafts(principal: Principal, commands: unknown[]) {
-    if (commands.length > 100)
-      throw new BadRequestException({
-        code: "BATCH_TOO_LARGE",
-        message: "At most 100 workforce drafts may be synchronized at once",
-      });
-    const results = [];
-    for (const raw of commands) {
-      try {
-        const command = WorkforceDraftCommandSchema.parse(raw);
-        results.push({ ok: true, result: await this.writeDraft(principal, command) });
-      } catch (error) {
-        results.push({ ok: false, status: statusOf(error), error: problemOf(error) });
-      }
-    }
-    return { results };
-  }
 
   async writeDraft(principal: Principal, command: WorkforceDraftCommand) {
     const input = WorkforceRecordInputSchema.parse(command.input);
@@ -442,19 +420,6 @@ export class WorkforceService {
       beforeValue: before,
       afterValue: after,
     });
-    const [next] = await tx
-      .update(syncRevision)
-      .set({ revision: sql`${syncRevision.revision} + 1` })
-      .where(eq(syncRevision.singleton, 1))
-      .returning();
-    if (!next) throw new Error("Sync revision row is missing");
-    await tx.insert(syncChanges).values({
-      revision: next.revision,
-      entityType: "WORKFORCE_RECORD",
-      entityId: after.id,
-      snapshot: after,
-      actorUserId: actor.userId,
-    });
   }
 
   private async withReceipt<T>(
@@ -574,31 +539,4 @@ function totalsOf(rows: Array<{ kind: string; amountToman: string; reversalOfId:
     paymentsToman: payments.toString(),
     remainingBalanceToman: (gross - deductions - payments).toString(),
   };
-}
-
-function statusOf(error: unknown): number {
-  if (error instanceof ZodError) return 400;
-  if (error instanceof BadRequestException) return 400;
-  if (error instanceof ConflictException) return 409;
-  if (error instanceof NotFoundException) return 404;
-  if (error instanceof ForbiddenException) return 403;
-  return 500;
-}
-function problemOf(error: unknown) {
-  if (error instanceof ZodError)
-    return {
-      code: "INVALID_WORKFORCE_DRAFT",
-      message: "Workforce draft is invalid",
-      fieldErrors: Object.fromEntries(
-        error.issues.map((issue) => [issue.path.join("."), issue.message]),
-      ),
-    };
-  if (
-    error &&
-    typeof error === "object" &&
-    "getResponse" in error &&
-    typeof error.getResponse === "function"
-  )
-    return error.getResponse();
-  return { code: "WORKFORCE_COMMAND_FAILED", message: "Workforce draft could not be synchronized" };
 }

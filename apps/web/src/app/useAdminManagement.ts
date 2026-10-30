@@ -1,3 +1,4 @@
+import { errorMessage } from "../lib/error-message";
 import { useReducer } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,12 +30,12 @@ export function useAdminManagement() {
       dispatch({ type: "password", value: result.temporaryPassword });
       await refresh();
     },
-    onError: (error: Error) => dispatch({ type: "problem", message: error.message }),
+    onError: (error: Error) => dispatch({ type: "problem", message: errorMessage(error) }),
   });
   const status = useMutation({
     mutationFn: ({ id, active }: { id: string; active: boolean }) => setAdminStatus(id, active),
     onSuccess: refresh,
-    onError: (error: Error) => dispatch({ type: "problem", message: error.message }),
+    onError: (error: Error) => dispatch({ type: "problem", message: errorMessage(error) }),
   });
   const reset = useMutation({
     mutationFn: resetAdminPassword,
@@ -42,7 +43,7 @@ export function useAdminManagement() {
       dispatch({ type: "password", value: password });
       await refresh();
     },
-    onError: (error: Error) => dispatch({ type: "problem", message: error.message }),
+    onError: (error: Error) => dispatch({ type: "problem", message: errorMessage(error) }),
   });
 
   async function run(action: () => Promise<unknown>): Promise<boolean> {
@@ -57,7 +58,7 @@ export function useAdminManagement() {
 
   return {
     admins: query.data ?? [],
-    problem: feedback.problem || (query.error instanceof Error ? query.error.message : ""),
+    problem: feedback.problem || (query.error ? errorMessage(query.error) : ""),
     temporaryPassword: feedback.temporaryPassword,
     busy: create.isPending || status.isPending || reset.isPending,
     create: (input: { username: string; displayName: string }) =>

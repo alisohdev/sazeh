@@ -116,7 +116,7 @@ export function AccountTools(props: Props) {
           <div>
             <h3 className="font-semibold">خروج از حساب</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              کارهای در انتظار پیش از خروج بررسی می‌شوند.
+              اطلاعات ثبت‌شده در حساب شما روی سرور باقی می‌مانند.
             </p>
           </div>
           <Button variant="destructive" onClick={() => void props.beginLogout()}>

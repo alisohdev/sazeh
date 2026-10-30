@@ -1,15 +1,15 @@
-import { FinanceLocalDraft } from "./FinanceLocalDraft";
 import { FinanceDraftEditor } from "./FinanceDraftEditor";
 import type { DirectoryRecord } from "@/business/types";
 import { FinanceEntryForm } from "./FinanceEntryForm";
 import { EvidenceControl } from "./EvidenceControl";
-import { FinanceDashboard } from "./FinanceDashboard";
-import type { DraftWorkspace } from "@/drafts/draft-repository";
+import { Link } from "react-router-dom";
+import type { WorkspaceRepository } from "@/data/workspace-repository";
 import { useFinance } from "./useFinance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { persianMoney } from "@/business/domain";
+import { errorMessage } from "@/lib/error-message";
 const kinds = {
   EXPENSE: "هزینه",
   EXPENSE_PAYMENT: "پرداخت هزینه",
@@ -36,10 +36,10 @@ export function FinancePanel({
   userId: string;
   projectId: string;
   online: boolean;
-  repository: DraftWorkspace;
+  repository: WorkspaceRepository;
   contacts: DirectoryRecord[];
 }) {
-  const { report, action, save, local, saveError, pendingActions } = useFinance(
+  const { report, action, save, saveError, saving } = useFinance(
     userId,
     projectId,
     online,
@@ -52,32 +52,13 @@ export function FinancePanel({
         <h3>امور مالی پروژه — تومان</h3>
       </CardHeader>
       <CardContent className="grid min-w-0 gap-4">
-        {!online && <p>ذخیره پیش‌نویس روی دستگاه ممکن است؛ قطعی‌کردن نیاز به اتصال دارد.</p>}
+        {!online && <p>برای ثبت اطلاعات به اینترنت متصل شوید.</p>}
         {(report.error || action.error || saveError) && (
-          <p role="alert">{(report.error || action.error || saveError)?.message}</p>
+          <p role="alert">{errorMessage(report.error || action.error || saveError)}</p>
         )}
-        <p>
-          پیش‌نویس روی دستگاه:{" "}
-          {local.data?.filter((r) => r.payload.input.projectId === projectId).length ?? 0}
-        </p>
-        {local.data
-          ?.filter((row) => row.payload.input.projectId === projectId)
-          .map((row) => (
-            <FinanceLocalDraft key={row.commandId} entry={row} repository={repository} />
-          ))}
-        {pendingActions.data
-          ?.filter((a) => report.data?.entries.some((r) => r.id === a.recordId))
-          .map((a) => (
-            <p role="status" key={a.commandId}>
-              {a.problem ?? "عملیات آنلاین در انتظار تأیید سرور"}
-            </p>
-          ))}
-        <FinanceDashboard
-          repository={repository}
-          userId={userId}
-          projectId={projectId}
-          online={online}
-        />
+        <Button asChild variant="outline">
+          <Link to={`/analytics?project=${projectId}`}>نمودارها و گزارش مالی پروژه</Link>
+        </Button>
         <dl className="grid gap-2">
           {Object.entries(report.data?.totals ?? {}).map(([k, v]) => (
             <div className="flex flex-wrap justify-between gap-2" key={k}>
@@ -86,7 +67,13 @@ export function FinancePanel({
             </div>
           ))}
         </dl>
-        <FinanceEntryForm contacts={contacts} save={save} action={action} report={report} />
+        <FinanceEntryForm
+          contacts={contacts}
+          save={save}
+          action={action}
+          report={report}
+          disabled={!online || saving}
+        />
         <p className="text-sm text-muted-foreground">
           پیش‌نویس‌ها در جمع قطعی محاسبه نمی‌شوند. صورت وضعیت ارسال‌شده نیاز به تصمیم جداگانه دارد.
         </p>

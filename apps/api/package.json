@@ -16,7 +16,6 @@
     "verify:bootstrap": "node --env-file-if-exists=../../.env --import tsx scripts/verify-bootstrap.ts",
     "verify:api": "node --env-file-if-exists=../../.env --import tsx scripts/verify-api.ts",
     "verify:performance": "node --env-file-if-exists=../../.env --import tsx scripts/verify-performance.ts",
-    "verify:browser": "node --env-file-if-exists=../../.env --import tsx scripts/verify-browser.ts",
     "verify:m3": "node --env-file-if-exists=../../.env --import tsx scripts/verify-m3.ts",
     "serve": "node --env-file-if-exists=../../.env dist/main.js",
     "verify:m4": "node --env-file-if-exists=../../.env --import tsx scripts/verify-m4.ts"

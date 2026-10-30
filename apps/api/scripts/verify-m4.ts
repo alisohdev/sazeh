@@ -404,7 +404,6 @@ try {
     await tx`delete from finance_records where project_id in (select id from projects where created_by=${userId})`;
     await tx`delete from finance_command_receipts where user_id=${userId}`;
     await tx`delete from business_audit where actor_user_id=${userId}`;
-    await tx`delete from sync_changes where actor_user_id=${userId}`;
     await tx`delete from project_budgets where project_id in (select id from projects where created_by=${userId})`;
     await tx`delete from projects where created_by=${userId}`;
     await tx`delete from sessions where id=${sessionId}`;

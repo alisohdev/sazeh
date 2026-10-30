@@ -23,10 +23,11 @@
     "verify:performance": "pnpm --filter @sazeh/api verify:performance",
     "serve:local": "pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build && pnpm --filter @sazeh/api --filter @sazeh/web --parallel serve",
     "icons:generate": "node scripts/generate-pwa-icons.mjs",
-    "verify:browser": "pnpm --filter @sazeh/api verify:browser",
+    "verify:browser": "playwright test",
     "verify:m3": "pnpm db:migrate && pnpm --filter @sazeh/api verify:m3",
-    "verify:m0": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm verify:database && pnpm verify:bootstrap && pnpm build && pnpm storage:verify && pnpm verify:api && pnpm verify:m3 && pnpm verify:m4 && pnpm verify:browser",
-    "verify:m4": "pnpm db:migrate && pnpm --filter @sazeh/api verify:m4"
+    "verify:m4": "pnpm db:migrate && pnpm --filter @sazeh/api verify:m4",
+    "verify": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm verify:unit && pnpm verify:database && pnpm verify:bootstrap && pnpm build && pnpm storage:verify && pnpm verify:api && pnpm verify:m3 && pnpm verify:m4 && pnpm verify:browser",
+    "verify:unit": "node --import tsx --test apps/api/src/finance/totals.spec.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

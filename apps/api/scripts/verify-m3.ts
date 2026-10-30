@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import type { ProcurementDocumentInput } from "@sazeh/contracts";
+import { ProcurementSaveCommandSchema, type ProcurementDocumentInput } from "@sazeh/contracts";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -45,25 +45,18 @@ function line(materialId: string, quantity: string, unitPriceToman?: string) {
   };
 }
 
-async function syncOne(command: object, principal = principals[0]!) {
-  const response = await service.sync(principal, [command]);
-  const item = response.results[0] as
-    | { ok: true; result: unknown }
-    | { ok: false; status: number; error: { code?: string; message?: string } };
-  assert(item, "sync must return one result");
-  if (!item.ok) throw new Error(`sync failed (${item.status}): ${JSON.stringify(item.error)}`);
-  return item.result;
+async function saveOne(command: object, principal = principals[0]!) {
+  return service.save(principal, ProcurementSaveCommandSchema.parse(command));
 }
 
 async function draft(input: ProcurementDocumentInput, principal = principals[0]!) {
   const entityId = randomUUID();
-  const result = await syncOne(
+  const result = await saveOne(
     {
       commandType: "DOCUMENT_UPSERT",
       commandId: randomUUID(),
       entityId,
       expectedVersion: 0,
-      dependencyIds: [],
       input,
     },
     principal,
@@ -142,7 +135,7 @@ async function createFixtures() {
     })),
   );
   for (const [index, entityId] of ids.materials.entries()) {
-    await syncOne({
+    await saveOne({
       commandType: "MATERIAL_UPSERT",
       commandId: randomUUID(),
       entityId,
@@ -320,16 +313,17 @@ async function verifyConcurrencyAndReplay() {
     expectedVersion: 1,
     input: { name: "مصالح آزمون بازپخش", baseUnit: "عدد" },
   };
-  const first = await syncOne(replayBody);
-  const replay = (await syncOne(replayBody)) as { replayed?: boolean; result?: unknown };
+  const first = await saveOne(replayBody);
+  const replay = (await saveOne(replayBody)) as { replayed?: boolean; result?: unknown };
   assert.equal(replay.replayed, true, "lost reply retry must return the stored result");
   assert(replay.result || first);
-  const conflict = await service.sync(principals[0]!, [
-    { ...replayBody, input: { ...replayBody.input, name: "بدنه متفاوت" } },
-  ]);
-  const conflictItem = conflict.results[0] as { ok: false; error: { code: string } };
-  assert.equal(conflictItem.ok, false);
-  assert.equal(conflictItem.error.code, "COMMAND_ID_CONFLICT");
+  await assert.rejects(
+    saveOne({ ...replayBody, input: { ...replayBody.input, name: "changed body" } }),
+    (error: unknown) =>
+      error instanceof Error &&
+      "getStatus" in error &&
+      (error as { getStatus(): number }).getStatus() === 409,
+  );
 
   const invoice = await draft({
     kind: "PURCHASE_INVOICE",
@@ -700,7 +694,6 @@ async function cleanup() {
     await sql`delete from stock_balances where project_id = any(${projectIds}::uuid[])`;
     await sql`delete from procurement_command_receipts where user_id = any(${userIds}::uuid[])`;
     await sql`delete from business_audit where actor_user_id = any(${userIds}::uuid[])`;
-    await sql`delete from sync_changes where actor_user_id = any(${userIds}::uuid[])`;
     await sql`delete from materials where id = any(${materialIds}::uuid[])`;
     await sql`delete from projects where id = any(${projectIds}::uuid[])`;
     await sql`delete from contacts where id = any(${ids.suppliers}::uuid[])`;

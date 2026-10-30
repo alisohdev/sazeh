@@ -7,7 +7,7 @@ import type {
 } from "../types";
 import { ContactSection } from "./ContactSection";
 import { EngagementSection } from "./EngagementSection";
-import { ProjectOverview } from "./ProjectOverview";
+import { FilterRow, PageIntro } from "./directory-controls";
 import { ProjectSection } from "./ProjectSection";
 
 type Props = {
@@ -19,9 +19,6 @@ type Props = {
   visibleProjects: DirectoryRecord[];
   visibleContacts: DirectoryRecord[];
   activeEngagements: DirectoryRecord[];
-  serverProjectCount: number;
-  workerCount: number;
-  pendingProjectCount: number;
   owners: DirectoryRecord[];
   workers: DirectoryRecord[];
   selectedProject: DirectoryRecord | undefined;
@@ -51,21 +48,12 @@ type Props = {
   onLinkProject: (row: DirectoryRecord) => void;
   onContactEdit: (row: DirectoryRecord) => void;
   onContactLifecycle: (row: DirectoryRecord) => void;
-  onKeepServer: (row: DirectoryRecord) => void;
-  onReviseProject: (row: DirectoryRecord) => void;
-  onReviseContact: (row: DirectoryRecord) => void;
-  onReviseEngagement: (row: DirectoryRecord) => void;
 };
 
 export function BusinessTabs(props: Props) {
   if (props.tab === "projects") {
     return (
       <div className="grid gap-5">
-        <ProjectOverview
-          projectCount={props.serverProjectCount}
-          workerCount={props.workerCount}
-          pendingProjectCount={props.pendingProjectCount}
-        />
         <FilterRow
           value={props.filter}
           onChange={props.onFilterChange}
@@ -87,8 +75,6 @@ export function BusinessTabs(props: Props) {
           onBudgetEdit={props.onBudgetEdit}
           onLifecycle={props.onProjectLifecycle}
           onLink={props.onLinkProject}
-          onKeepServer={props.onKeepServer}
-          onRevise={props.onReviseProject}
         />
       </div>
     );
@@ -117,8 +103,6 @@ export function BusinessTabs(props: Props) {
           onClear={props.onClear}
           onEdit={props.onContactEdit}
           onLifecycle={props.onContactLifecycle}
-          onKeepServer={props.onKeepServer}
-          onRevise={props.onReviseContact}
         />
       </div>
     );
@@ -152,47 +136,7 @@ export function BusinessTabs(props: Props) {
         projectName={props.projectName}
         onSave={props.onSaveEngagement}
         onClear={props.onClear}
-        onKeepServer={props.onKeepServer}
-        onRevise={props.onReviseEngagement}
       />
-    </div>
-  );
-}
-
-function PageIntro({ title, text }: { title: string; text: string }) {
-  return (
-    <header>
-      <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-      <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">{text}</p>
-    </header>
-  );
-}
-
-function FilterRow(props: {
-  value: string;
-  onChange: (value: string) => void;
-  label: string;
-  checked: boolean;
-  onCheckedChange: (value: boolean) => void;
-  checkboxLabel: string;
-}) {
-  return (
-    <div className="grid gap-3 rounded-xl border border-border bg-card p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-      <Input
-        aria-label={props.label}
-        placeholder={props.label}
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
-      />
-      <label className="inline-flex min-h-10 items-center gap-2 text-sm font-medium">
-        <input
-          className="size-4 shrink-0 accent-primary"
-          type="checkbox"
-          checked={props.checked}
-          onChange={(event) => props.onCheckedChange(event.target.checked)}
-        />
-        {props.checkboxLabel}
-      </label>
     </div>
   );
 }

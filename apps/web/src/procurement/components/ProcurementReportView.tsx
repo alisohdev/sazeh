@@ -2,13 +2,11 @@ import type { DirectoryRecord } from "../../business/types";
 import type {
   MaterialView,
   ProcurementFilter,
-  ProcurementLocalDraft,
   ProcurementRecord,
   ProcurementReport,
 } from "../types";
 import { ProcurementAnalytics } from "./ProcurementAnalytics";
 import { ProcurementFilters } from "./ProcurementFilters";
-import { ProcurementPending } from "./ProcurementPending";
 import { ProcurementRecords } from "./ProcurementRecords";
 import { ProcurementTotals } from "./ProcurementTotals";
 import { StockSummary } from "./StockSummary";
@@ -19,7 +17,6 @@ export function ProcurementReportView({
   suppliers,
   materials,
   report,
-  localDrafts,
   loading,
   error,
   drillDownIds,
@@ -28,7 +25,6 @@ export function ProcurementReportView({
   onFinalize,
   onReverse,
   onEditRecord,
-  onEditLocal,
   reviewReady,
 }: {
   filter: ProcurementFilter;
@@ -36,7 +32,6 @@ export function ProcurementReportView({
   suppliers: DirectoryRecord[];
   materials: MaterialView[];
   report?: ProcurementReport | undefined;
-  localDrafts: ProcurementLocalDraft[];
   loading: boolean;
   error: string;
   drillDownIds: string[];
@@ -45,7 +40,6 @@ export function ProcurementReportView({
   onFinalize: (record: ProcurementRecord) => Promise<void>;
   onReverse: (record: ProcurementRecord, reason: string) => Promise<void>;
   onEditRecord: (record: ProcurementRecord) => void;
-  onEditLocal: (draft: ProcurementLocalDraft) => void;
   reviewReady: (record: ProcurementRecord) => boolean;
 }) {
   return (
@@ -82,7 +76,6 @@ export function ProcurementReportView({
           />
         </>
       )}
-      <ProcurementPending drafts={localDrafts} onEdit={onEditLocal} />
     </section>
   );
 }

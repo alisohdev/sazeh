@@ -1,4 +1,3 @@
-import { hasServerRecord } from "./domain";
 import type { DirectoryRecord, WorkspaceDirectoryData } from "./types";
 import type { WorkspaceState } from "./workspace-state";
 
@@ -20,20 +19,10 @@ export function selectDirectory(data: WorkspaceDirectoryData, view: WorkspaceSta
       )
     : undefined;
   const selectedOwnerId = selected?.type === "PROJECT" ? selected.data.ownerContactId : undefined;
-  const serverProjects = visibleProjects.filter(hasServerRecord);
-  const serverProjectIds = new Set(serverProjects.map((row) => row.id));
-  const workerCount = new Set(
-    activeEngagements
-      .filter((row) => serverProjectIds.has(String(row.data.projectId)) && hasServerRecord(row))
-      .map((row) => row.data.workerId),
-  ).size;
   return {
     visibleProjects,
     visibleContacts,
     activeEngagements,
-    serverProjects,
-    workerCount,
-    pendingProjectCount: visibleProjects.filter((row) => !hasServerRecord(row)).length,
     owners: data.contacts.filter(
       (row) =>
         row.data.isOwner === true && (row.data.archived !== true || row.id === selectedOwnerId),

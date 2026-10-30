@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/error-message";
 import { useReducer, type FormEvent } from "react";
 import { WorkforceRecordInputSchema, type WorkforceRecordInput } from "@sazeh/contracts";
 import { normalizeDigits } from "../../business/domain";
@@ -77,33 +78,33 @@ export function WorkforceEntryForm(props: Props) {
     const amountToman = normalizeDigits(String(fields.get("amountToman") ?? ""))
       .replaceAll(",", "")
       .trim();
-    const input =
-      state.kind === "EARNING"
-        ? WorkforceRecordInputSchema.parse({
-            ...base,
-            kind: "EARNING",
-            engagementType: String(selected.data.type),
-            ...(calculated
-              ? {
-                  quantity: normalizeDigits(String(fields.get("quantity") ?? "")).trim(),
-                  rateToman: normalizeDigits(rate).replaceAll(",", "").trim(),
-                }
-              : { amountToman }),
-          })
-        : WorkforceRecordInputSchema.parse({
-            ...base,
-            kind: state.kind,
-            amountToman,
-            ...(state.kind === "WORKER_PAYMENT"
-              ? { paymentKind: String(fields.get("paymentKind") ?? "PAYMENT") }
-              : {}),
-          });
     dispatch({ saving: true, message: "" });
     try {
+      const input =
+        state.kind === "EARNING"
+          ? WorkforceRecordInputSchema.parse({
+              ...base,
+              kind: "EARNING",
+              engagementType: String(selected.data.type),
+              ...(calculated
+                ? {
+                    quantity: normalizeDigits(String(fields.get("quantity") ?? "")).trim(),
+                    rateToman: normalizeDigits(rate).replaceAll(",", "").trim(),
+                  }
+                : { amountToman }),
+            })
+          : WorkforceRecordInputSchema.parse({
+              ...base,
+              kind: state.kind,
+              amountToman,
+              ...(state.kind === "WORKER_PAYMENT"
+                ? { paymentKind: String(fields.get("paymentKind") ?? "PAYMENT") }
+                : {}),
+            });
       await props.onSave(input, props.recordId, props.version);
       props.onSaved();
     } catch (error) {
-      dispatch({ message: error instanceof Error ? error.message : "ذخیره انجام نشد." });
+      dispatch({ message: errorMessage(error) });
     } finally {
       dispatch({ saving: false });
     }

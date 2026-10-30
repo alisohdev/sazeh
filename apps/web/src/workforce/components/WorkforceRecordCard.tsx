@@ -106,7 +106,7 @@ export function WorkforceRecordCard({
           )}
           {record.status === "DRAFT" && !reviewReady && (
             <span className="text-xs text-muted-foreground">
-              در انتظار تأیید همگام‌سازی پیش‌نویس
+              پیش‌نویس هنوز آمادهٔ ثبت نهایی نیست
             </span>
           )}
           {record.status === "FINALIZED" && !record.reversalOfId && (

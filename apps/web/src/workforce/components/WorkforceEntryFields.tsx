@@ -154,7 +154,7 @@ export function WorkforceEntryFields(props: Props) {
           {props.worker && props.project && (
             <p className="text-xs text-muted-foreground sm:col-span-2">
               {String(props.worker.data.displayName)}، {String(props.project.data.name)}، جمع مبلغ
-              محاسباتی هنگام همگام‌سازی روی سرور تعیین می‌شود.
+              محاسباتی هنگام ثبت روی سرور تعیین می‌شود.
             </p>
           )}
           {props.message && (

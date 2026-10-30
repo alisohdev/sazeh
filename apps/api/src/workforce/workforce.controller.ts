@@ -11,6 +11,7 @@ import {
 } from "@nestjs/common";
 import {
   WorkforceFinalizeCommandSchema,
+  WorkforceDraftCommandSchema,
   WorkforceReportFilterSchema,
   WorkforceReverseCommandSchema,
 } from "@sazeh/contracts";
@@ -22,15 +23,15 @@ import { WorkforceService } from "./workforce.service.js";
 @Controller("v1/workforce")
 export class WorkforceController {
   constructor(@Inject(WorkforceService) private readonly workforce: WorkforceService) {}
-
-  @Post("sync/commands")
-  syncDrafts(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
-    if (!Array.isArray(body))
+  @Post("drafts")
+  saveDraft(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    const parsed = WorkforceDraftCommandSchema.safeParse(body);
+    if (!parsed.success)
       throw new BadRequestException({
-        code: "INVALID_BATCH",
-        message: "Expected a list of workforce draft commands",
+        code: "INVALID_DRAFT",
+        message: "Workforce draft is invalid",
       });
-    return this.workforce.syncDrafts(principal(request), body);
+    return this.workforce.writeDraft(principal(request), parsed.data);
   }
 
   @Get("records")

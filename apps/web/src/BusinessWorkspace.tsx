@@ -10,8 +10,9 @@ import { initialWorkspaceState, workspaceReducer } from "./business/workspace-st
 import type { DirectoryRecord, WorkspaceDirectoryData, WorkspaceTab } from "./business/types";
 import { useBusinessDirectory } from "./business/useBusinessDirectory";
 import { WorkforceWorkspace } from "./workforce/WorkforceWorkspace";
+import { ProcurementWorkspace } from "./procurement/ProcurementWorkspace";
 
-type Page = WorkspaceTab | "project" | "workforce";
+type Page = WorkspaceTab | "project" | "workforce" | "procurement";
 type NoteController = Pick<AppController, "drafts" | "saveDraft" | "saving" | "exportPending">;
 type Props = {
   user: User;
@@ -28,6 +29,7 @@ const emptyDirectory: WorkspaceDirectoryData = {
   contacts: [],
   engagements: [],
   budgets: [],
+  materials: [],
   lastSync: "",
   pending: 0,
 };
@@ -72,6 +74,19 @@ export function BusinessWorkspace(props: Props) {
   if (page === "workforce") {
     return (
       <WorkforceWorkspace
+        user={user}
+        repository={repository}
+        data={data}
+        locked={locked}
+        online={online}
+        onStatus={onStatus}
+      />
+    );
+  }
+
+  if (page === "procurement") {
+    return (
+      <ProcurementWorkspace
         user={user}
         repository={repository}
         data={data}

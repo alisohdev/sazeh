@@ -15,7 +15,7 @@ export default defineConfig({
   },
   webServer: {
     command: "node scripts/serve-local-ready.mjs",
-    url: "http://127.0.0.1:4173",
+    url: "http://127.0.0.1:4173/api/v1/auth/csrf",
     reuseExistingServer: false,
     timeout: 180_000,
   },

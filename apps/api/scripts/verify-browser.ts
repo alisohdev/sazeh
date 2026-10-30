@@ -21,8 +21,15 @@ import {
   noteDrafts,
   projectBudgets,
   projects,
+  materials,
+  procurementDocuments,
+  procurementLines,
+  procurementReceipts,
   refreshTokens,
   sessions,
+  stockBalances,
+  stockMovements,
+  supplierPaymentAllocations,
   syncChanges,
   users,
   workforceRecords,
@@ -76,6 +83,12 @@ async function main(): Promise<void> {
     name: `کارگر صورت‌حساب ${runId.slice(0, 6)}`,
   };
   const workforceEngagementId = randomUUID();
+  const procurementFixture = {
+    supplierId: randomUUID(),
+    supplierName: `تأمین‌کننده موبایل ${runId.slice(0, 6)}`,
+    materialId: randomUUID(),
+    materialName: `سیمان آزمون ${runId.slice(0, 6)}`,
+  };
   const reviewSamples = [
     {
       workerId: randomUUID(),
@@ -123,6 +136,17 @@ async function main(): Promise<void> {
         createdBy: fixtures[0]!.id,
         updatedBy: fixtures[0]!.id,
       });
+      await tx.insert(contacts).values({
+        id: procurementFixture.supplierId,
+        displayName: procurementFixture.supplierName,
+        phone: null,
+        isWorker: false,
+        isSupplier: true,
+        isOwner: false,
+        archived: false,
+        createdBy: fixtures[0]!.id,
+        updatedBy: fixtures[0]!.id,
+      });
       await tx.insert(projects).values({
         id: workforceProject.id,
         name: workforceProject.name,
@@ -142,6 +166,14 @@ async function main(): Promise<void> {
         defaultRateToman: "1000000",
         startsOn: "2020-01-01",
         endsOn: null,
+        archived: false,
+        createdBy: fixtures[0]!.id,
+        updatedBy: fixtures[0]!.id,
+      });
+      await tx.insert(materials).values({
+        id: procurementFixture.materialId,
+        name: procurementFixture.materialName,
+        baseUnit: "کیسه",
         archived: false,
         createdBy: fixtures[0]!.id,
         updatedBy: fixtures[0]!.id,
@@ -312,6 +344,12 @@ async function main(): Promise<void> {
           M2_REVIEW_LAB01_PROJECT_ID: reviewSamples[0]!.projectId,
           M2_REVIEW_PERIOD_WORKER_ID: reviewSamples[1]!.workerId,
           M2_REVIEW_PERIOD_PROJECT_ID: reviewSamples[1]!.projectId,
+          M3_TEST_PROJECT_ID: workforceProject.id,
+          M3_TEST_PROJECT_NAME: workforceProject.name,
+          M3_TEST_SUPPLIER_ID: procurementFixture.supplierId,
+          M3_TEST_SUPPLIER_NAME: procurementFixture.supplierName,
+          M3_TEST_MATERIAL_ID: procurementFixture.materialId,
+          M3_TEST_MATERIAL_NAME: procurementFixture.materialName,
           AUTH_ALLOWED_ORIGIN: "http://127.0.0.1:4173",
           API_PORT: String(apiPort),
           API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
@@ -379,6 +417,25 @@ async function main(): Promise<void> {
       await tx.delete(syncChanges).where(inArray(syncChanges.actorUserId, ids));
       await tx.delete(directoryReceipts).where(inArray(directoryReceipts.userId, ids));
       await tx.delete(workforceReceipts).where(inArray(workforceReceipts.userId, ids));
+      await tx.delete(procurementReceipts).where(inArray(procurementReceipts.userId, ids));
+      const fixtureDocuments = await tx
+        .select({ id: procurementDocuments.id })
+        .from(procurementDocuments)
+        .where(inArray(procurementDocuments.createdBy, ids));
+      const documentIds = fixtureDocuments.map((document) => document.id);
+      if (documentIds.length > 0) {
+        await tx.delete(stockMovements).where(inArray(stockMovements.documentId, documentIds));
+        await tx
+          .delete(supplierPaymentAllocations)
+          .where(inArray(supplierPaymentAllocations.paymentDocumentId, documentIds));
+        await tx
+          .delete(supplierPaymentAllocations)
+          .where(inArray(supplierPaymentAllocations.invoiceDocumentId, documentIds));
+        await tx.delete(procurementLines).where(inArray(procurementLines.documentId, documentIds));
+        await tx.delete(procurementDocuments).where(inArray(procurementDocuments.id, documentIds));
+      }
+      await tx.delete(stockBalances).where(eq(stockBalances.projectId, workforceProject.id));
+      await tx.delete(materials).where(inArray(materials.createdBy, ids));
       await tx.delete(workforceRecords).where(inArray(workforceRecords.createdBy, ids));
       await tx.delete(engagements).where(inArray(engagements.createdBy, ids));
       await tx.delete(projectBudgets).where(inArray(projectBudgets.updatedBy, ids));

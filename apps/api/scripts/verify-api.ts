@@ -78,7 +78,7 @@ async function main(): Promise<void> {
   let server: ChildProcess | undefined;
   let childOutput = "";
   const start = async () => {
-    server = spawn(process.execPath, ["--env-file=../../.env", "dist/main.js"], {
+    server = spawn(process.execPath, ["--env-file-if-exists=../../.env", "dist/main.js"], {
       cwd: process.cwd(),
       env: { ...process.env, APP_ENV: "local", API_PORT: String(port) },
       stdio: ["ignore", "pipe", "pipe"],

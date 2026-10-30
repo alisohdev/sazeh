@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import type { DirectoryRecord } from "../types";
+import type { DirectoryRecord, DirectorySaveResult } from "../types";
 import { ContactCard } from "./ContactCard";
 import { ContactForm } from "./ContactForm";
 
@@ -8,7 +8,7 @@ type Props = {
   engagements: DirectoryRecord[];
   selected?: DirectoryRecord | undefined;
   locked: boolean;
-  onSave: (form: FormData, row?: DirectoryRecord) => Promise<boolean>;
+  onSave: (form: FormData, row?: DirectoryRecord) => Promise<DirectorySaveResult>;
   onClear: () => void;
   onEdit: (row: DirectoryRecord) => void;
   onLifecycle: (row: DirectoryRecord) => void;

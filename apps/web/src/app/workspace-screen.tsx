@@ -1,10 +1,10 @@
+import { Navigate, Route, Routes } from "react-router-dom";
 import type { AppController } from "./useAppController";
 import { BusinessWorkspace } from "../BusinessWorkspace";
-import { DraftEntry } from "./draft-entry";
-import { DraftList } from "./draft-list";
 import { DepartureDialog } from "./departure-dialog";
 import { AccountTools } from "./account-tools";
 import { UpdateBanner } from "./update-banner";
+import { WorkspaceHeader } from "./workspace-header";
 
 export function WorkspaceScreen(props: AppController) {
   const {
@@ -14,8 +14,6 @@ export function WorkspaceScreen(props: AppController) {
     online,
     message,
     locked,
-    text,
-    setText,
     saveDraft,
     saving,
     exportPending,
@@ -34,64 +32,74 @@ export function WorkspaceScreen(props: AppController) {
     applyUpdate,
     setMessage,
   } = props;
+  const businessProps =
+    user && repository ? { user, repository, locked, online, onStatus: setMessage } : undefined;
+
   return (
-    <main className="page-shell" dir="rtl">
-      <header className="topbar">
-        <div className="brand-mark" aria-hidden="true">
-          Ø¯
-        </div>
-        <div>
-          <p className="eyebrow">Ø¯ÙØªØ± Ø±ÙˆØ²Ø§Ù†Ù‡Ù” Ú©Ø§Ø±Ú¯Ø§Ù‡</p>
-          <h1>ÛŒØ§Ø¯Ø¯Ø§Ø´Øª ØªØ§Ø²Ù‡</h1>
-          <p className="workspace-user">
-            {user?.displayName} Â· {user?.username}
+    <main className="min-h-[100dvh] bg-background" dir="rtl">
+      <WorkspaceHeader user={user} online={online} />
+      {message && (
+        <div className="mx-auto w-full max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
+          <p
+            className={`rounded-xl border px-4 py-3 text-sm leading-7 ${
+              locked
+                ? "border-destructive/30 bg-destructive/5 text-destructive"
+                : "border-border bg-card text-foreground"
+            }`}
+            role="status"
+          >
+            {message}
           </p>
         </div>
-        <span className={online ? "connection is-online" : "connection is-offline"} role="status">
-          <span className="connection-dot" />
-          {online ? "Ø¢Ù†Ù„Ø§ÛŒÙ†" : "Ø¢ÙÙ„Ø§ÛŒÙ†"}
-        </span>
-      </header>
-      {message && (
-        <p className={locked ? "feedback auth-warning" : "feedback"} role="status">
-          {message}
-        </p>
       )}
-      <DraftEntry
-        text={text}
-        setText={setText}
-        saveDraft={saveDraft}
-        saving={saving}
-        locked={locked}
-      />
-      <DraftList
-        drafts={drafts}
-        exportPending={exportPending}
-        syncPending={() => void repository?.syncPending()}
-        online={online}
-        locked={locked}
-      />
-      {user && repository && (
-        <BusinessWorkspace
-          user={user}
-          repository={repository}
-          locked={locked}
-          online={online}
-          onStatus={setMessage}
-        />
+      {businessProps && (
+        <Routes>
+          <Route index element={<Navigate to="/projects" replace />} />
+          <Route
+            path="projects"
+            element={<BusinessWorkspace {...businessProps} page="projects" />}
+          />
+          <Route
+            path="projects/:projectId"
+            element={
+              <BusinessWorkspace
+                {...businessProps}
+                page="project"
+                notes={{ drafts, saveDraft, saving, exportPending }}
+              />
+            }
+          />
+          <Route path="people" element={<BusinessWorkspace {...businessProps} page="contacts" />} />
+          <Route
+            path="engagements"
+            element={<BusinessWorkspace {...businessProps} page="engagements" />}
+          />
+          <Route
+            path="workforce"
+            element={<BusinessWorkspace {...businessProps} page="workforce" />}
+          />
+          <Route
+            path="account"
+            element={
+              <section className="mx-auto grid w-full max-w-3xl gap-4 px-4 py-6 sm:px-6 lg:py-8">
+                <AccountTools
+                  user={user}
+                  showAdmins={showAdmins}
+                  setShowAdmins={setShowAdmins}
+                  showPasswordChange={showPasswordChange}
+                  setShowPasswordChange={setShowPasswordChange}
+                  changePassword={changePassword}
+                  saving={saving}
+                  locked={locked}
+                  online={online}
+                  beginLogout={beginLogout}
+                />
+              </section>
+            }
+          />
+          <Route path="*" element={<Navigate to="/projects" replace />} />
+        </Routes>
       )}
-      <AccountTools
-        user={user}
-        showAdmins={showAdmins}
-        setShowAdmins={setShowAdmins}
-        showPasswordChange={showPasswordChange}
-        setShowPasswordChange={setShowPasswordChange}
-        changePassword={changePassword}
-        saving={saving}
-        locked={locked}
-        online={online}
-        beginLogout={beginLogout}
-      />
       <DepartureDialog
         departure={departure}
         exportBeforeLogout={exportBeforeLogout}
@@ -100,13 +108,6 @@ export function WorkspaceScreen(props: AppController) {
         cancelDeparture={cancelDeparture}
       />
       <UpdateBanner updateReady={updateReady} applyUpdate={applyUpdate} />
-      <footer className="footer-note">
-        <span className="footer-rule" />
-        <span>
-          ÛŒØ§Ø¯Ø¯Ø§Ø´Øªâ€ŒÙ‡Ø§ÛŒ Ø§Ø±Ø³Ø§Ù„â€ŒÙ†Ø´Ø¯Ù‡ Ø¯Ø± ÙØ¶Ø§ÛŒ Ø¬Ø¯Ø§Ú¯Ø§Ù†Ù‡Ù” Ù‡Ù…ÛŒÙ†
-          Ø­Ø³Ø§Ø¨ Ø¨Ø§Ù‚ÛŒ Ù…ÛŒâ€ŒÙ…Ø§Ù†Ù†Ø¯.
-        </span>
-      </footer>
     </main>
   );
 }

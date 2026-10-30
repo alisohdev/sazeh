@@ -22,9 +22,9 @@ export default defineConfig({
       registerType: "prompt",
       includeAssets: ["favicon.ico", "pwa-192.png", "pwa-512.png"],
       manifest: {
-        name: "دفتر کارگاه",
-        short_name: "دفتر کارگاه",
-        description: "ثبت یادداشت‌های کارگاه، حتی بدون اینترنت",
+        name: "سازه | مدیریت کارگاه",
+        short_name: "سازه",
+        description: "مدیریت پروژه، نیروی کار و یادداشت‌های کارگاه",
         lang: "fa",
         dir: "rtl",
         start_url: "/",

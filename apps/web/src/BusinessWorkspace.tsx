@@ -1,20 +1,26 @@
 import { useReducer } from "react";
 import type { User } from "@sazeh/contracts";
+import { useNavigate, useParams } from "react-router-dom";
+import type { AppController } from "./app/useAppController";
 import type { DraftWorkspace } from "./drafts/draft-repository";
 import { BusinessTabs } from "./business/components/BusinessTabs";
-import { WorkspaceHeader } from "./business/components/WorkspaceHeader";
+import { ProjectDetailPage } from "./business/components/ProjectDetailPage";
 import { selectDirectory } from "./business/selectors";
 import { initialWorkspaceState, workspaceReducer } from "./business/workspace-state";
 import type { DirectoryRecord, WorkspaceDirectoryData, WorkspaceTab } from "./business/types";
 import { useBusinessDirectory } from "./business/useBusinessDirectory";
 import { WorkforceWorkspace } from "./workforce/WorkforceWorkspace";
 
+type Page = WorkspaceTab | "project" | "workforce";
+type NoteController = Pick<AppController, "drafts" | "saveDraft" | "saving" | "exportPending">;
 type Props = {
   user: User;
   repository: DraftWorkspace;
   locked: boolean;
   online: boolean;
   onStatus: (message: string) => void;
+  page: Page;
+  notes?: NoteController;
 };
 
 const emptyDirectory: WorkspaceDirectoryData = {
@@ -26,14 +32,18 @@ const emptyDirectory: WorkspaceDirectoryData = {
   pending: 0,
 };
 
-export function BusinessWorkspace({ user, repository, locked, online, onStatus }: Props) {
+export function BusinessWorkspace(props: Props) {
+  const { user, repository, locked, online, onStatus, page, notes } = props;
   const [view, dispatch] = useReducer(workspaceReducer, initialWorkspaceState);
+  const navigate = useNavigate();
+  const { projectId } = useParams();
   const directory = useBusinessDirectory({ user, repository, onStatus });
   const data = directory.data ?? emptyDirectory;
   const selectedData = selectDirectory(data, view);
 
   function select(row: DirectoryRecord, tab?: WorkspaceTab, budgetId?: string) {
     dispatch({ type: "select", selection: { type: row.type, id: row.id }, tab, budgetId });
+    if (tab) navigate(tab === "contacts" ? "/people" : `/${tab}`);
   }
   async function save(
     type: "PROJECT" | "CONTACT" | "ENGAGEMENT",
@@ -42,25 +52,43 @@ export function BusinessWorkspace({ user, repository, locked, online, onStatus }
     budgetId?: string,
   ) {
     const saved = await directory.save(type, form, row, budgetId);
-    if (saved) dispatch({ type: "clear-selection" });
+    if (saved.ok) dispatch({ type: "clear-selection" });
     return saved;
+  }
+
+  if (page === "project") {
+    return (
+      <ProjectDetailPage
+        project={data.projects.find((row) => row.id === projectId)}
+        data={data}
+        notes={notes}
+        locked={locked}
+        online={online}
+        repository={repository}
+      />
+    );
+  }
+
+  if (page === "workforce") {
+    return (
+      <WorkforceWorkspace
+        user={user}
+        repository={repository}
+        data={data}
+        locked={locked}
+        online={online}
+        onStatus={onStatus}
+      />
+    );
   }
 
   return (
     <section
-      className="mx-auto grid w-full max-w-6xl gap-4 px-3 py-5 sm:px-6"
+      className="mx-auto grid w-full max-w-7xl gap-5 px-4 py-6 sm:px-6 lg:px-8 lg:py-8"
       dir="rtl"
-      aria-labelledby="business-heading"
     >
-      <WorkspaceHeader
-        displayName={user.displayName}
-        lastSync={data.lastSync}
-        pending={data.pending}
-        locked={locked}
-        onSync={() => void directory.syncAgain()}
-      />
       <BusinessTabs
-        tab={view.tab}
+        tab={page}
         filter={view.filter}
         showArchivedProjects={view.showArchivedProjects}
         showArchivedContacts={view.showArchivedContacts}
@@ -90,7 +118,6 @@ export function BusinessWorkspace({ user, repository, locked, online, onStatus }
         ownerName={selectedData.ownerName}
         workerName={selectedData.workerName}
         projectName={selectedData.projectName}
-        onTabChange={(tab) => dispatch({ type: "tab", tab })}
         onFilterChange={(value) => dispatch({ type: "filter", value })}
         onArchivedProjectsChange={(value) => dispatch({ type: "archived-projects", value })}
         onArchivedContactsChange={(value) => dispatch({ type: "archived-contacts", value })}
@@ -98,6 +125,7 @@ export function BusinessWorkspace({ user, repository, locked, online, onStatus }
         onSaveContact={(form, row) => save("CONTACT", form, row)}
         onSaveEngagement={(form, row) => save("ENGAGEMENT", form, row)}
         onClear={() => dispatch({ type: "clear-selection" })}
+        onProjectOpen={(row) => navigate(`/projects/${row.id}`)}
         onProjectEdit={(row) => select(row, "projects")}
         onBudgetEdit={(row, budget) => select(row, "projects", budget.id)}
         onProjectLifecycle={(row) => void directory.setLifecycle(row, "PROJECT")}
@@ -110,18 +138,10 @@ export function BusinessWorkspace({ user, repository, locked, online, onStatus }
         onReviseEngagement={(row) => select(row, "engagements")}
       />
       {directory.isLoading && (
-        <p role="status" className="text-center text-sm text-muted-foreground">
+        <p role="status" className="text-sm text-muted-foreground">
           فهرست در حال بارگذاری است…
         </p>
       )}
-      <WorkforceWorkspace
-        user={user}
-        repository={repository}
-        data={data}
-        locked={locked}
-        online={online}
-        onStatus={onStatus}
-      />
     </section>
   );
 }

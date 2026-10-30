@@ -1,5 +1,6 @@
 import { useReducer } from "react";
 import type { User, WorkforceRecordInput } from "@sazeh/contracts";
+import { useSearchParams } from "react-router-dom";
 import type { DraftWorkspace } from "../drafts/draft-repository";
 import type { WorkspaceDirectoryData } from "../business/types";
 import { WorkforceEntryForm } from "./components/WorkforceEntryForm";
@@ -33,7 +34,11 @@ function reducer(state: ViewState, action: Action): ViewState {
 }
 
 export function WorkforceWorkspace({ user, repository, data, locked, online, onStatus }: Props) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [searchParams] = useSearchParams();
+  const [state, dispatch] = useReducer(reducer, {
+    ...initialState,
+    filter: { ...initialState.filter, projectId: searchParams.get("project") ?? "" },
+  });
   const workforce = useWorkforce({ user, repository, filter: state.filter, online });
   const projectById = new Map(data.projects.map((row) => [row.id, row]));
   const workerById = new Map(data.contacts.map((row) => [row.id, row]));
@@ -86,15 +91,17 @@ export function WorkforceWorkspace({ user, repository, data, locked, online, onS
 
   return (
     <section
-      className="mx-auto grid w-full max-w-6xl gap-4 px-3 pb-6 sm:px-6"
+      className="mx-auto grid w-full max-w-7xl gap-5 px-4 py-6 sm:px-6 lg:px-8 lg:py-8"
       dir="rtl"
       aria-label="ثبت دستمزد و پرداخت"
     >
       <header className="grid gap-1">
-        <p className="text-xs font-medium text-muted-foreground">M2 · دستمزد، پرداخت و مانده</p>
-        <h2 id="workforce-heading" className="text-xl font-semibold">
-          نیروی کار
+        <h2 id="workforce-heading" className="text-2xl font-semibold tracking-tight">
+          کارکرد و پرداخت
         </h2>
+        <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+          ثبت کارکرد، کسورات و پرداخت هر نیرو با امکان بررسی و نهایی‌سازی
+        </p>
       </header>
       <WorkforceEntryForm
         key={state.editing?.id ?? "new-workforce-entry"}

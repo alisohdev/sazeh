@@ -1,5 +1,6 @@
 export type DirectoryKind = "PROJECT" | "CONTACT" | "ENGAGEMENT" | "BUDGET";
 export type WorkspaceTab = "projects" | "contacts" | "engagements";
+export type DirectorySaveResult = { ok: true } | { ok: false; error: string };
 
 export type DirectoryRecord = {
   id: string;

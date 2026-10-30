@@ -21,7 +21,7 @@ export function WorkspaceHeader({ displayName, lastSync, pending, locked, onSync
             پروژه‌ها و فهرست‌ها
           </h2>
           <p className="text-xs text-muted-foreground">
-            {displayName} · پیش‌نویس محلی از دادهٔ مشترک جداست
+            {displayName}، پیش‌نویس محلی از دادهٔ مشترک جداست
           </p>
         </div>
         <div className="grid gap-2 sm:justify-items-end">

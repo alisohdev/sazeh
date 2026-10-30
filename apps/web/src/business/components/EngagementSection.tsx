@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import type { DirectoryRecord } from "../types";
+import type { DirectoryRecord, DirectorySaveResult } from "../types";
 import { EngagementCard } from "./EngagementCard";
 import { EngagementForm } from "./EngagementForm";
 
@@ -12,7 +12,7 @@ type Props = {
   locked: boolean;
   workerName: (id: unknown) => string;
   projectName: (id: unknown) => string;
-  onSave: (form: FormData, row?: DirectoryRecord) => Promise<boolean>;
+  onSave: (form: FormData, row?: DirectoryRecord) => Promise<DirectorySaveResult>;
   onClear: () => void;
   onKeepServer: (row: DirectoryRecord) => void;
   onRevise: (row: DirectoryRecord) => void;

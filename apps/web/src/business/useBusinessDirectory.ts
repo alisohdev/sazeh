@@ -4,7 +4,12 @@ import type { DirectoryCommand } from "@sazeh/contracts";
 import type { User } from "@sazeh/contracts";
 import type { DraftWorkspace } from "../drafts/draft-repository";
 import { contactPayload, engagementPayload, projectPayload, budgetPayload } from "./forms";
-import type { DirectoryKind, DirectoryRecord, WorkspaceDirectoryData } from "./types";
+import type {
+  DirectoryKind,
+  DirectoryRecord,
+  DirectorySaveResult,
+  WorkspaceDirectoryData,
+} from "./types";
 
 type Props = {
   user: User;
@@ -55,7 +60,7 @@ export function useBusinessDirectory({ user, repository, onStatus }: Props) {
     form: FormData,
     current?: DirectoryRecord,
     budgetId?: string,
-  ): Promise<boolean> {
+  ): Promise<DirectorySaveResult> {
     try {
       const payload =
         type === "PROJECT"
@@ -80,10 +85,11 @@ export function useBusinessDirectory({ user, repository, onStatus }: Props) {
       onStatus("روی دستگاه ذخیره شد؛ همگام‌سازی در حال انجام است.");
       if (navigator.onLine) await repository.syncPending();
       await refreshDirectory();
-      return true;
+      return { ok: true };
     } catch (error) {
-      onStatus(error instanceof Error ? error.message : "ذخیره انجام نشد.");
-      return false;
+      const message = saveErrorMessage(error);
+      onStatus(message);
+      return { ok: false, error: message };
     }
   }
 
@@ -123,6 +129,26 @@ export function useBusinessDirectory({ user, repository, onStatus }: Props) {
     keepServer,
     syncAgain,
   };
+}
+
+function saveErrorMessage(error: unknown) {
+  const issue = (error as { issues?: Array<{ path?: unknown[]; message?: string }> })?.issues?.[0];
+  const field = String(issue?.path?.[0] ?? "");
+  const fieldMessages: Record<string, string> = {
+    workerId: "ابتدا نیروی کار را انتخاب کنید.",
+    projectId: "ابتدا پروژه را انتخاب کنید.",
+    type: "نوع همکاری معتبر نیست.",
+    defaultRateToman: "نرخ همکاری را به‌صورت عدد وارد کنید.",
+    startsOn: "تاریخ شروع را انتخاب کنید.",
+    endsOn: "تاریخ پایان نمی‌تواند پیش از تاریخ شروع باشد.",
+  };
+  if (fieldMessages[field]) return fieldMessages[field];
+  if (error instanceof Error && error.message.includes("ENGAGEMENT_OVERLAP")) {
+    return "برای این نیرو در همین پروژه، همکاری هم‌زمان دیگری ثبت شده است.";
+  }
+  return error instanceof Error && error.message
+    ? error.message
+    : "ذخیره انجام نشد. اطلاعات فرم را بررسی کنید.";
 }
 
 function commandKind(type: Exclude<DirectoryKind, "BUDGET">, mode: "create" | "update") {

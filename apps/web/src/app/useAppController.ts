@@ -55,7 +55,6 @@ type AppState = {
   message: string;
   locked: boolean;
   saving: boolean;
-  text: string;
   updateReady: boolean;
   showAdmins: boolean;
   showPasswordChange: boolean;
@@ -74,7 +73,6 @@ const initialAppState: AppState = {
   message: "",
   locked: false,
   saving: false,
-  text: "",
   updateReady: false,
   showAdmins: false,
   showPasswordChange: false,
@@ -124,10 +122,6 @@ export function useAppController() {
     (value) => dispatch({ key: "saving", value }),
     [],
   );
-  const setText = useCallback<React.Dispatch<React.SetStateAction<string>>>(
-    (value) => dispatch({ key: "text", value }),
-    [],
-  );
   const setUpdateReady = useCallback<React.Dispatch<React.SetStateAction<boolean>>>(
     (value) => dispatch({ key: "updateReady", value }),
     [],
@@ -157,7 +151,6 @@ export function useAppController() {
     message,
     locked,
     saving,
-    text,
     updateReady,
     showAdmins,
     showPasswordChange,
@@ -629,19 +622,24 @@ export function useAppController() {
     departureChoice.current?.("cancel");
   }
 
-  async function saveDraft(event: FormEvent<HTMLFormElement>) {
+  async function saveDraft(
+    event: FormEvent<HTMLFormElement>,
+    projectId: string,
+    noteText: string,
+  ): Promise<boolean> {
     event.preventDefault();
-    if (!text.trim() || saving || locked || !repository) return;
+    if (!noteText.trim() || saving || locked || !repository) return false;
     setSaving(true);
     setMessage("");
     try {
-      await repository.save(text);
-      setText("");
+      await repository.save(noteText, projectId);
       setMessage("یادداشت روی این دستگاه ذخیره شد.");
       await refreshDrafts();
       if (navigator.onLine) void repository.syncPending();
+      return true;
     } catch {
       setMessage("ذخیره روی این دستگاه انجام نشد. متن را کپی کنید و دوباره تلاش کنید.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -682,14 +680,12 @@ export function useAppController() {
     message,
     locked,
     saving,
-    text,
     updateReady,
     showAdmins,
     showPasswordChange,
     departure,
     departureElsewhere,
     setMessage,
-    setText,
     setShowAdmins,
     setShowPasswordChange,
     submitLogin,

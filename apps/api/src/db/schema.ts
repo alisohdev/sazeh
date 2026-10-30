@@ -307,12 +307,14 @@ export const noteDrafts = pgTable(
   {
     id: uuid("id").primaryKey(),
     authorUserId: uuid("author_user_id").references(() => users.id),
+    projectId: uuid("project_id").references(() => projects.id),
     text: varchar("text", { length: 4000 }).notNull(),
     version: integer("version").notNull().default(1),
     status: varchar("status", { length: 16 }).notNull().default("DRAFT"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   (table) => [
+    index("note_drafts_project_created_idx").on(table.projectId, table.createdAt),
     check("note_drafts_version_check", sql`${table.version} = 1`),
     check("note_drafts_status_check", sql`${table.status} = 'DRAFT'`),
     check("note_drafts_text_check", sql`length(btrim(${table.text})) between 1 and 4000`),

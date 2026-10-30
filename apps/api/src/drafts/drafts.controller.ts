@@ -11,7 +11,7 @@ import {
   Req,
 } from "@nestjs/common";
 import { DraftCreateCommandSchema } from "@sazeh/contracts";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { ZodError } from "zod";
 import { DATABASE, type Database } from "../db/database.module.js";
 import { noteDrafts } from "../db/schema.js";
@@ -41,6 +41,33 @@ export class DraftsController {
     }
   }
 
+  @Get("project/:projectId")
+  async listForProject(
+    @Param("projectId") projectId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+      throw new BadRequestException({ code: "INVALID_ID", message: "Project ID must be a UUID" });
+    }
+    const principal = requirePrincipal(request);
+    const drafts = await this.db
+      .select()
+      .from(noteDrafts)
+      .where(
+        and(eq(noteDrafts.projectId, projectId), eq(noteDrafts.authorUserId, principal.userId)),
+      )
+      .orderBy(desc(noteDrafts.createdAt));
+    return drafts.map((draft) => ({
+      id: draft.id,
+      authorUserId: draft.authorUserId,
+      projectId: draft.projectId,
+      text: draft.text,
+      version: draft.version,
+      status: draft.status,
+      createdAt: draft.createdAt.toISOString(),
+    }));
+  }
+
   @Get(":id")
   async read(@Param("id") id: string, @Req() request: AuthenticatedRequest) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
@@ -58,6 +85,7 @@ export class DraftsController {
     return {
       id: draft.id,
       authorUserId: draft.authorUserId,
+      projectId: draft.projectId,
       text: draft.text,
       version: draft.version,
       status: draft.status,

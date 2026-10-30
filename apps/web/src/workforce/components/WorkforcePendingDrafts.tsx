@@ -19,7 +19,7 @@ export function WorkforcePendingDrafts({ drafts, pendingServerCount, onEdit }: P
   return (
     <Card className="border-amber-300/60 bg-amber-50/50 dark:bg-amber-950/10">
       <CardHeader>
-        <CardTitle>پیش‌نویس‌های محلی · خارج از جمع نهایی</CardTitle>
+        <CardTitle>پیش‌نویس‌های محلی خارج از جمع نهایی</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-2">
         {drafts.length ? (
@@ -30,10 +30,10 @@ export function WorkforcePendingDrafts({ drafts, pendingServerCount, onEdit }: P
             >
               <div>
                 <p className="font-medium">
-                  {recordLabel(draft.data.kind)} · {draft.data.businessDate}
+                  {recordLabel(draft.data.kind)}، {draft.data.businessDate}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {draft.data.description} · وضعیت: {draft.syncState}
+                  {draft.data.description}، وضعیت: {draft.syncState}
                 </p>
               </div>
               <Button size="sm" variant="outline" onClick={() => onEdit(draft)}>

@@ -22,7 +22,7 @@ export function ConflictReview({ row, onKeepServer, onRevise }: Props) {
       data.amountToman,
     ]
       .filter((value) => value !== undefined && value !== null && value !== "")
-      .join(" · ") || "—";
+      .join("، ") || "موردی ثبت نشده";
 
   return (
     <div

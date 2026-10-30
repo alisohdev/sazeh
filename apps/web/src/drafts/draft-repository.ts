@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from "dexie";
 import {
   DraftAcknowledgementSchema,
   DraftCreateCommandSchema,
+  ServerDraftSchema,
   DirectoryAcknowledgementSchema,
   DirectoryBootstrapSchema,
   DirectoryChangesSchema,
@@ -25,6 +26,7 @@ import { workspaceControl } from "../identity/workspace-control.js";
 type SyncState = Exclude<DraftView["syncState"], "SENDING">;
 type SavedDraft = {
   id: string;
+  projectId?: string;
   text: string;
   savedAt: string;
   syncState: SyncState;
@@ -128,6 +130,17 @@ class WorkspaceDatabase extends Dexie {
     });
     this.version(3).stores({
       drafts: "&id,savedAt,syncState",
+      outbox: "&commandId,entityId,createdAt,retryAt",
+      leases: "&key",
+      directorySnapshots: "&id,type,updatedAt",
+      directoryDrafts: "&id,type,syncState,updatedAt",
+      directoryOutbox: "&commandId,entityId,createdAt,retryAt",
+      directoryCursors: "&key",
+      workforceDrafts: "&id,updatedAt,syncState,status",
+      workforceOutbox: "&commandId,recordId,action,createdAt,retryAt",
+    });
+    this.version(4).stores({
+      drafts: "&id,projectId,savedAt,syncState",
       outbox: "&commandId,entityId,createdAt,retryAt",
       leases: "&key",
       directorySnapshots: "&id,type,updatedAt",
@@ -263,16 +276,19 @@ export function openDraftWorkspace(
       return () => listeners.delete(listener);
     },
 
-    async list(): Promise<DraftView[]> {
+    async list(projectId?: string): Promise<DraftView[]> {
       const store = await db();
       const items = await store.drafts.orderBy("savedAt").reverse().toArray();
-      return items.map((item) => ({
-        id: item.id,
-        text: item.text,
-        savedAt: item.savedAt,
-        syncState: sending.has(item.id) ? "SENDING" : item.syncState,
-        ...(item.problem ? { problem: item.problem } : {}),
-      }));
+      return items
+        .filter((item) => !projectId || item.projectId === projectId)
+        .map((item) => ({
+          id: item.id,
+          ...(item.projectId ? { projectId: item.projectId } : {}),
+          text: item.text,
+          savedAt: item.savedAt,
+          syncState: sending.has(item.id) ? "SENDING" : item.syncState,
+          ...(item.problem ? { problem: item.problem } : {}),
+        }));
     },
 
     async pendingCount(): Promise<number> {
@@ -282,6 +298,32 @@ export function openDraftWorkspace(
         (await store.directoryOutbox.count()) +
         (await store.workforceOutbox.count())
       );
+    },
+
+    async pullProjectNotes(projectId: string): Promise<void> {
+      await requireCurrent();
+      if (!navigator.onLine) return;
+      const response = await authClient.requestForUser(
+        `/api/v1/drafts/project/${encodeURIComponent(projectId)}`,
+        {},
+        user.id,
+      );
+      const serverDrafts = ServerDraftSchema.array().parse(await response.json());
+      const store = await db();
+      await store.transaction("rw", store.drafts, store.outbox, async () => {
+        for (const serverDraft of serverDrafts) {
+          const pending = await store.outbox.where("entityId").equals(serverDraft.id).count();
+          if (pending) continue;
+          await store.drafts.put({
+            id: serverDraft.id,
+            projectId,
+            text: serverDraft.text,
+            savedAt: serverDraft.createdAt,
+            syncState: "SYNCED",
+          });
+        }
+      });
+      notify();
     },
 
     async directoryItems(type?: DirectoryType): Promise<DirectoryDraft[]> {
@@ -539,7 +581,7 @@ export function openDraftWorkspace(
       notify();
     },
 
-    async save(text: string): Promise<void> {
+    async save(text: string, projectId: string): Promise<void> {
       await withWorkspaceActivity("shared", async () => {
         await requireCurrent();
         const normalizedText = text.trim();
@@ -550,10 +592,12 @@ export function openDraftWorkspace(
           entityId: crypto.randomUUID(),
           expectedVersion: 0,
           kind: "CREATE_NOTE_DRAFT",
+          projectId,
           text: normalizedText,
         });
         const draft: SavedDraft = {
           id: payload.entityId,
+          projectId,
           text: normalizedText,
           savedAt,
           syncState: "PENDING",
@@ -599,8 +643,8 @@ export function openDraftWorkspace(
       const run = (async () => {
         do {
           syncRequested = false;
-          await runSync();
           await runDirectorySync();
+          await runSync();
           await runWorkforceSync();
         } while (syncRequested && !closed);
       })();
@@ -634,7 +678,7 @@ export function openDraftWorkspace(
           exportedAt: new Date().toISOString(),
           drafts: drafts
             .filter((draft): draft is SavedDraft => Boolean(draft))
-            .map(({ id, text, savedAt }) => ({ id, text, savedAt })),
+            .map(({ id, projectId, text, savedAt }) => ({ id, projectId, text, savedAt })),
           commands: commands.map(({ commandId, entityId, createdAt, payload }) => ({
             commandId,
             entityId,
@@ -832,7 +876,9 @@ export function openDraftWorkspace(
           if (
             acknowledgement.commandId !== entry.commandId ||
             acknowledgement.draft.id !== entry.entityId ||
-            acknowledgement.draft.authorUserId !== user.id
+            acknowledgement.draft.authorUserId !== user.id ||
+            (entry.payload.projectId !== undefined &&
+              acknowledgement.draft.projectId !== entry.payload.projectId)
           ) {
             await updateState(
               store,

@@ -91,7 +91,9 @@
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 90% -10%, rgb(46 126 115 / 7%), transparent 28rem), var(--background);
 }
 button,
 textarea,
@@ -204,14 +206,16 @@ h2 {
   white-space: nowrap;
   font-size: 11px;
 }
-label {
+.auth-shell label,
+.admin-card label {
   display: block;
   margin: 0 0 8px;
   color: #344e5c;
   font-size: 13px;
   font-weight: 600;
 }
-input {
+.auth-shell input:not([type="checkbox"]):not([type="radio"]),
+.admin-card input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   min-height: 46px;
   margin: 0 0 17px;
@@ -223,9 +227,20 @@ input {
   padding: 10px 13px;
   direction: rtl;
 }
-input:focus {
+.auth-shell input:not([type="checkbox"]):not([type="radio"]):focus,
+.admin-card input:not([type="checkbox"]):not([type="radio"]):focus {
   border-color: #579286;
   box-shadow: 0 0 0 3px #5792861c;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1rem;
+  height: 1rem;
+  min-height: 1rem;
+  margin: 0;
+  padding: 0;
+  border-radius: 0.25rem;
+  box-shadow: none;
 }
 textarea {
   width: 100%;

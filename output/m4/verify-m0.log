@@ -1,11 +1,11 @@
-pnpm.cmd : $ pnpm lint && pnpm typecheck && pnpm format:check && pnpm verify:database && pnpm verify:bootstrap && pnpm 
+pnpm.cmd : $ pnpm lint && pnpm typecheck && pnpm format:check && pnpm verify:database && pnpm verify:bootstrap && pnpm
 build && pnpm storage:verify && pnpm verify:api && pnpm verify:m3 && pnpm verify:m4 && pnpm verify:browser
 At line:2 char:1
 + pnpm.cmd verify:m0 *> output/m4/verify-m0.log; $verificationExit=$LAS ...
 + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: ($ pnpm lint && ... verify:browser:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
- 
+
 $ eslint .
 $ pnpm --filter @sazeh/contracts typecheck && pnpm --filter @sazeh/api typecheck && pnpm --filter @sazeh/web typecheck
 $ tsc --noEmit -p tsconfig.json
@@ -126,10 +126,10 @@ dist/assets/index-DTBPWh2p.css                    67.52 kB │ gzip:  13.00 kB
 dist/assets/workbox-window.prod.es5-Bd17z0YL.js    5.65 kB │ gzip:   2.20 kB
 dist/assets/index-uQN-xJxi.js                    993.44 kB │ gzip: 290.83 kB
 
-[plugin builtin:vite-reporter] 
+[plugin builtin:vite-reporter]
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
-- Use build.rolldownOptions.output.codeSplitting to improve chunking: 
+- Use build.rolldownOptions.output.codeSplitting to improve chunking:
 https://rolldown.rs/reference/OutputOptions.codeSplitting
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
 ✓ built in 3.25s
@@ -204,23 +204,23 @@ $ node --env-file-if-exists=../../.env --import tsx scripts/verify-browser.ts
 [WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
 [WebServer] (node:3864) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 [WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
-[WebServer] $ pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build 
+[WebServer] $ pnpm --filter @sazeh/contracts build && pnpm --filter @sazeh/api build && pnpm --filter @sazeh/web build
 && pnpm --filter @sazeh/api --filter @sazeh/web --parallel serve
 [WebServer] (node:5208) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 [WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
 [WebServer] $ tsc -p tsconfig.json
 [WebServer] (node:3364) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 [WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
-[WebServer] $ tsc -p tsconfig.build.json[WebServer] 
+[WebServer] $ tsc -p tsconfig.build.json[WebServer]
 [WebServer] (node:12068) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 [WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
 [WebServer] $ node ../../scripts/generate-pwa-icons.mjs && vite build
 [WebServer] (node:20168) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 [WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
-[WebServer] [plugin builtin:vite-reporter] 
+[WebServer] [plugin builtin:vite-reporter]
 [WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
 [WebServer] - Using dynamic import() to code-split the application
-[WebServer] - Use build.rolldownOptions.output.codeSplitting to improve chunking: 
+[WebServer] - Use build.rolldownOptions.output.codeSplitting to improve chunking:
 https://rolldown.rs/reference/OutputOptions.codeSplitting
 [WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
 [WebServer] (node:12240) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.

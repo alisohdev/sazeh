@@ -132,22 +132,13 @@ export function FinancePanel({
             {r.status === "DRAFT" && (
               <Button
                 disabled={disabled}
-                onClick={async () => {
-                  const pending = (await repository.evidenceItems()).some(
-                    (f) => f.recordId === r.id,
-                  );
-                  if (
-                    pending &&
-                    !window.confirm("پیوست‌ها آماده نیستند. با حفظ صف پیوست قطعی شود؟")
-                  )
-                    return;
+                onClick={() => {
                   action.mutate({
                     path: "finalize",
                     body: {
                       commandId: crypto.randomUUID(),
                       recordId: r.id,
                       expectedVersion: r.version,
-                      acknowledgePendingEvidence: pending,
                     },
                   });
                 }}

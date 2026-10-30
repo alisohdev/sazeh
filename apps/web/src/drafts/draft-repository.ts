@@ -352,7 +352,12 @@ export function openDraftWorkspace(
     const local = (await repository.evidenceItems()).some((f) => f.recordId === id);
     const remote = await repository.remoteEvidence(id);
     const pending = local || remote.some((f) => f.state !== "READY");
-    if (pending && !window.confirm("پیوست‌ها هنوز آماده نیستند. با حفظ صف پیوست قطعی شود؟"))
+    if (
+      pending &&
+      !window.confirm(
+        "برخی پیوست‌های این دستگاه یا سرور در انتظار بارگذاری یا ناموفق هستند. ثبت مالی بدون تأیید آماده بودن این پیوست‌ها قطعی شود؟ پیوست‌ها حفظ می‌شوند و بارگذاری قابل تلاش دوباره است.",
+      )
+    )
       throw new Error("Finalization cancelled; evidence retained");
     return pending;
   }
@@ -510,15 +515,26 @@ export function openDraftWorkspace(
     },
     async remoteEvidence(recordId: string) {
       await requireCurrent();
-      const response = await authClient.requestForUser(
-        "/api/v1/attachments/record/" + recordId,
-        {},
-        user.id,
-      );
-      if (!response.ok) throw new Error("Evidence unavailable");
-      return response.json() as Promise<
-        Array<{ id: string; filename: string; state: string; size: number }>
-      >;
+      try {
+        if (!(await canSync())) throw new Error("برای بررسی پیوست‌ها دوباره وارد شوید.");
+        const response = await authClient.requestForUser(
+          "/api/v1/attachments/record/" + recordId,
+          {},
+          user.id,
+        );
+        await financialResponse(response);
+        if (!response.ok) throw new Error("Evidence unavailable");
+        await requireCurrent();
+        return (await response.json()) as Array<{
+          id: string;
+          filename: string;
+          state: string;
+          size: number;
+        }>;
+      } catch (error) {
+        await pauseFinancialAuthentication(error);
+        throw error;
+      }
     },
     async downloadEvidence(id: string) {
       await requireCurrent();
@@ -583,13 +599,22 @@ export function openDraftWorkspace(
           .where("recordId")
           .equals(payload.recordId)
           .first();
-        if (!pending)
+        if (!pending) {
+          const command =
+            path === "finalize"
+              ? {
+                  ...payload,
+                  acknowledgePendingEvidence: await confirmPendingEvidence(payload.recordId),
+                }
+              : payload;
+          await requireCurrent();
           await store.financeActions.add({
             commandId: payload.commandId,
             recordId: payload.recordId,
             path,
-            payload,
+            payload: command,
           });
+        }
         notify();
       });
       await repository.syncPending();

@@ -91,7 +91,7 @@ test("authenticated offline drafts survive session expiry, sync once across tabs
 
   await context.setOffline(false);
   await expect(
-    page.getByText("اتصال برقرار شد؛ برای ادامهٔ همگام‌سازی دوباره وارد شوید."),
+    page.getByRole("status").filter({ hasText: /برای.*همگام.سازی دوباره وارد شوید/ }),
   ).toBeVisible();
   await page.getByRole("button", { name: "همگام‌سازی", exact: true }).click();
   await expect(page.getByText("ورود دوباره لازم است", { exact: true })).toBeVisible();
@@ -163,10 +163,10 @@ test("authentication rejection pauses both queued drafts until the user signs in
   await expireFixtureSessions(requiredEnv("M1A_TEST_USER_ID"));
   await context.setOffline(false);
   await expect(
-    page.getByText("اتصال برقرار شد؛ برای ادامهٔ همگام‌سازی دوباره وارد شوید."),
+    page.getByRole("status").filter({ hasText: /برای.*همگام.سازی دوباره وارد شوید/ }),
   ).toBeVisible();
   await expect(
-    peer.getByText("اتصال برقرار شد؛ برای ادامهٔ همگام‌سازی دوباره وارد شوید."),
+    peer.getByRole("status").filter({ hasText: /برای.*همگام.سازی دوباره وارد شوید/ }),
   ).toBeVisible();
   await page.getByRole("button", { name: "همگام‌سازی", exact: true }).click();
   await expect(page.getByText("ورود دوباره لازم است", { exact: true })).toHaveCount(2);

@@ -49,3 +49,17 @@ Regressions live in `tests/m4/followup.spec.ts`, expanded `tests/m2/workforce.sp
 The extended offline evidence regression also exposed paused local IndexedDB queries in workforce/procurement. Those local query hooks now use `networkMode: "always"`; server query gates remain online-only. Authentication-pause notifications mark queued notes as requiring sign-in even when refresh rejects before the note queue starts.
 
 Follow-up result: `pnpm verify:m0` passed, including all 20 built-browser tests (4.0 minutes). The current full log is `output/m4/followup-verify.log`. Mobile conflict resolution and offline workforce/procurement evidence screenshots are retained under `output/playwright/m4/`. No merge or deployment was performed.
+
+## Remote pending-evidence acknowledgment correction
+
+Finance finalization now uses the workforce/procurement evidence preflight inside the account-scoped repository, before persisting a new finance action. It checks both local evidence and the authenticated server attachment list. Any non-READY attachment requires explicit informed acknowledgment; declining preserves the attachment and queues no posting command. Attachment lookup failures block posting and surface an error instead of implying an empty evidence list. READY, pending and failed uploads have separate labels; failed lookups expose an unknown-status warning and a retry control.
+
+The preflight derives acknowledgment only for new commands. Persisted attempted commands retain their original ID and body through retries. Server evidence lookups use the shared authentication pause, session rejection handling and current-account fence. No attachment is deleted or abandoned by acknowledgment.
+
+Regression coverage in `tests/m4/pending-evidence.spec.ts` stages a PDF through the real API, without a local upload queue entry. It verifies server rejection without acknowledgment, declining without posting, successful acknowledged posting, retained STAGED metadata, and identical command replay after losing the response. Additional cases cover HTTP 503 lookup recovery, retained FAILED metadata with its separate label, and revoked-session pause with no finance posting. The existing full suite covers READY downloads, offline uploads, expired sessions and account switching. The before-fix failures are retained in `output/m4/pending-evidence-red.log`.
+
+The M0 expiration assertions accept either existing authentication-pause banner because the attachment lookup can detect expiry before the reconnect handler. They still require both tabs to pause, queued notes to remain, automatic sync requests to stop, and sign-in to synchronize each command exactly once.
+
+The existing finance conflict regression now waits for the persisted server record before opening its editor. Its local and server editors have identical labels; observing the initial zero queue count could otherwise select a local create revision before its acknowledgment, rather than exercise the intended stale server update. The focused server-conflict regression passes.
+
+Correction verification: `pnpm verify:m0` passed in full, including all **24 built-browser tests (5.1 minutes)**. The current complete gate log is `output/m4/pending-evidence-verify.log`; the inspected 360 px evidence is `output/playwright/m4/remote-pending-evidence-360.png`. Browser overflow assertions pass. Validation is local with synthetic fixtures and injected network failures; no merge or deployment was performed.

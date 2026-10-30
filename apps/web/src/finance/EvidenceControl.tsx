@@ -31,8 +31,7 @@ export function EvidenceControl({
     retry: false,
     queryKey: ["evidence-remote", repository.userId, recordId],
     enabled: navigator.onLine,
-    queryFn: async () =>
-      (await repository.financeOnlineAllowed()) ? repository.remoteEvidence(recordId) : [],
+    queryFn: () => repository.remoteEvidence(recordId),
   });
   return (
     <div className="grid min-w-0 w-full gap-2">
@@ -50,15 +49,27 @@ export function EvidenceControl({
           }}
         />
       </label>
+      {(files.error || remote.error) && (
+        <p role="alert" className="text-destructive">
+          بررسی پیوست‌ها ناموفق بود؛ وضعیت پیوست‌ها نامشخص است.{" "}
+          {String((files.error || remote.error)?.message)}
+        </p>
+      )}
+      {remote.isFetching && <p>در حال بررسی وضعیت پیوست‌های سرور…</p>}
       {files.data?.map((f) => (
         <p key={f.id} className="break-words">
-          {f.filename}: {f.problem ?? "در صف بارگذاری"}
+          {f.filename}: {f.problem ? "بارگذاری ناموفق: " + f.problem : "در صف بارگذاری"}
         </p>
       ))}
       {remote.data?.map((f) => (
         <div className="flex flex-wrap gap-2" key={f.id}>
           <span className="break-words">
-            {f.filename} — {f.state === "READY" ? "آماده" : "در انتظار بارگذاری"}
+            {f.filename} —{" "}
+            {f.state === "READY"
+              ? "آماده"
+              : f.state === "FAILED"
+                ? "بارگذاری ناموفق"
+                : "در انتظار بارگذاری"}
           </span>
           {f.state === "READY" && (
             <Button
@@ -75,7 +86,15 @@ export function EvidenceControl({
           )}
         </div>
       ))}
-      <Button variant="outline" type="button" onClick={() => void repository.syncPending()}>
+      <Button
+        variant="outline"
+        type="button"
+        onClick={() => {
+          void repository.syncPending();
+          void remote.refetch();
+          void files.refetch();
+        }}
+      >
         تلاش دوباره بارگذاری
       </Button>
     </div>

@@ -50,7 +50,9 @@ test("expired session pauses multiple finance commands and their retry timer", a
   }
   await context.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(page.getByText(/برای ادامه.*دوباره وارد/)).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: /برای.*همگام.سازی دوباره وارد شوید/ }),
+  ).toBeVisible();
   let requests = 0;
   const listener = (req: Request) => {
     if (req.method() === "POST" && /finance|auth\/refresh/.test(req.url())) requests++;
@@ -122,6 +124,8 @@ test("stale finance drafts support explicit revise and accept-server decisions",
   await save(page, "conflict seed");
   await expect(page.getByText("پیش‌نویس روی دستگاه: 0")).toBeVisible();
   const server = page.locator("article").filter({ hasText: "conflict seed" });
+  // The local editor has the same label; wait for the persisted server record.
+  await expect(server.getByRole("button", { name: "قطعی کردن", exact: true })).toBeVisible();
   await expect(server.getByText("ویرایش پیش‌نویس", { exact: true })).toBeVisible();
   let conflicts = 0;
   await page.route("**/api/v1/finance/draft", async (route) => {

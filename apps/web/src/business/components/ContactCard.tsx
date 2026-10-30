@@ -28,7 +28,7 @@ export function ContactCard({
     row.data.isOwner && "کارفرما",
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join("، ");
   const archived = row.data.archived === true;
 
   return (

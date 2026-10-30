@@ -13,7 +13,7 @@ type Props = {
 export function WorkforceEntryList(props: Props) {
   return (
     <section className="grid gap-2" aria-label="ریز گردش حساب">
-      <h3 className="px-1 font-semibold">ریز گردش حساب · اسناد نهایی و نیازمند بررسی</h3>
+      <h3 className="px-1 font-semibold">ریز گردش حساب، اسناد نهایی و نیازمند بررسی</h3>
       {props.entries.map((record) => (
         <WorkforceRecordCard
           key={record.id}

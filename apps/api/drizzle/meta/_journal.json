@@ -57,6 +57,13 @@
       "when": 1793307422796,
       "tag": "0007_m2_workforce_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793352000000,
+      "tag": "0008_project_notes",
+      "breakpoints": true
     }
   ]
 }

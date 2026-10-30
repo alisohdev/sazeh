@@ -6,6 +6,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://REPLACE_WITH_EXACT_API_DEPLOYMENT_URL/api/:path*"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ]
 }

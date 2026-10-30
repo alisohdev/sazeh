@@ -10,6 +10,7 @@ type Props = {
   budgets: DirectoryRecord[];
   engagements: DirectoryRecord[];
   ownerName: (id: unknown) => string;
+  onOpen: (row: DirectoryRecord) => void;
   onEdit: (row: DirectoryRecord) => void;
   onBudgetEdit: (row: DirectoryRecord, budget: DirectoryRecord) => void;
   onLifecycle: (row: DirectoryRecord) => void;
@@ -27,7 +28,10 @@ export function ProjectCard(props: Props) {
   const archived = row.data.lifecycle === "ARCHIVED";
 
   return (
-    <Card className="min-w-0" data-testid="project-card">
+    <Card
+      className="min-w-0 transition-shadow hover:shadow-[0_12px_30px_rgba(23,56,79,0.08)]"
+      data-testid="project-card"
+    >
       <CardHeader className="gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Badge variant={archived ? "secondary" : "default"}>
@@ -42,12 +46,12 @@ export function ProjectCard(props: Props) {
       <CardContent className="grid gap-3 text-sm leading-6">
         <p>کارفرما: {props.ownerName(row.data.ownerContactId)}</p>
         <p>
-          بازه: {isoToJalali(row.data.startsOn) || "—"} تا{" "}
+          بازه: {isoToJalali(row.data.startsOn) || "ثبت نشده"} تا{" "}
           {isoToJalali(row.data.endsOn) || "ادامه دارد"}
         </p>
         <p>مبلغ اولیهٔ قرارداد: {persianMoney(row.data.contractInitialToman)} تومان</p>
         <p>
-          {serverLinks.length} همکاری ثبت‌شده در سرور · {serverWorkerCount} نیروی متمایز با احتساب
+          {serverLinks.length} همکاری ثبت‌شده در سرور، {serverWorkerCount} نیروی متمایز با احتساب
           سابقه
         </p>
         {projectLinks.length > serverLinks.length && (
@@ -86,6 +90,9 @@ export function ProjectCard(props: Props) {
           />
         )}
         <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+          <Button type="button" onClick={() => props.onOpen(row)}>
+            باز کردن پرونده
+          </Button>
           <Button type="button" variant="outline" onClick={() => props.onEdit(row)}>
             ویرایش
           </Button>

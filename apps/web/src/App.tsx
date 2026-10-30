@@ -7,7 +7,7 @@ export default function App() {
   if (app.screen === "loading")
     return (
       <main className="page-shell" dir="rtl">
-        <p role="status">Ø¯Ø± Ø­Ø§Ù„ Ø¢Ù…Ø§Ø¯Ù‡â€ŒØ³Ø§Ø²ÛŒ ÙØ¶Ø§ÛŒ Ú©Ø§Ø±ÛŒâ€¦</p>
+        <p role="status">در حال آماده‌سازی فضای کاری…</p>
       </main>
     );
   if (app.screen === "login") return <LoginScreen {...app} />;

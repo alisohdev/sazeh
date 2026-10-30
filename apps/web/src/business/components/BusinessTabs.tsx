@@ -1,6 +1,10 @@
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { DirectoryRecord, WorkspaceDirectoryData, WorkspaceTab } from "../types";
+import type {
+  DirectoryRecord,
+  DirectorySaveResult,
+  WorkspaceDirectoryData,
+  WorkspaceTab,
+} from "../types";
 import { ContactSection } from "./ContactSection";
 import { EngagementSection } from "./EngagementSection";
 import { ProjectOverview } from "./ProjectOverview";
@@ -20,23 +24,27 @@ type Props = {
   pendingProjectCount: number;
   owners: DirectoryRecord[];
   workers: DirectoryRecord[];
-  selectedProject?: DirectoryRecord | undefined;
-  selectedContact?: DirectoryRecord | undefined;
-  selectedEngagement?: DirectoryRecord | undefined;
-  selectedBudget?: DirectoryRecord | undefined;
-  selectedProjectId?: string | undefined;
+  selectedProject: DirectoryRecord | undefined;
+  selectedContact: DirectoryRecord | undefined;
+  selectedEngagement: DirectoryRecord | undefined;
+  selectedBudget: DirectoryRecord | undefined;
+  selectedProjectId: string | undefined;
   locked: boolean;
   ownerName: (id: unknown) => string;
   workerName: (id: unknown) => string;
   projectName: (id: unknown) => string;
-  onTabChange: (tab: WorkspaceTab) => void;
   onFilterChange: (value: string) => void;
   onArchivedProjectsChange: (value: boolean) => void;
   onArchivedContactsChange: (value: boolean) => void;
-  onSaveProject: (form: FormData, row?: DirectoryRecord, budgetId?: string) => Promise<boolean>;
-  onSaveContact: (form: FormData, row?: DirectoryRecord) => Promise<boolean>;
-  onSaveEngagement: (form: FormData, row?: DirectoryRecord) => Promise<boolean>;
+  onSaveProject: (
+    form: FormData,
+    row?: DirectoryRecord,
+    budgetId?: string,
+  ) => Promise<DirectorySaveResult>;
+  onSaveContact: (form: FormData, row?: DirectoryRecord) => Promise<DirectorySaveResult>;
+  onSaveEngagement: (form: FormData, row?: DirectoryRecord) => Promise<DirectorySaveResult>;
   onClear: () => void;
+  onProjectOpen: (row: DirectoryRecord) => void;
   onProjectEdit: (row: DirectoryRecord) => void;
   onBudgetEdit: (row: DirectoryRecord, budget: DirectoryRecord) => void;
   onProjectLifecycle: (row: DirectoryRecord) => void;
@@ -50,53 +58,31 @@ type Props = {
 };
 
 export function BusinessTabs(props: Props) {
-  return (
-    <Tabs
-      value={props.tab}
-      onValueChange={(value) => props.onTabChange(value as WorkspaceTab)}
-      dir="rtl"
-      className="min-w-0"
-    >
-      <TabsList aria-label="بخش‌های اطلاعات شرکت" className="grid h-auto w-full grid-cols-3">
-        <TabsTrigger value="projects">پروژه‌ها</TabsTrigger>
-        <TabsTrigger value="contacts">نیرو و تأمین‌کننده</TabsTrigger>
-        <TabsTrigger value="engagements">همکاری‌ها</TabsTrigger>
-      </TabsList>
-      <TabsContent value="projects" className="grid gap-4 pt-3">
+  if (props.tab === "projects") {
+    return (
+      <div className="grid gap-5">
         <ProjectOverview
           projectCount={props.serverProjectCount}
           workerCount={props.workerCount}
           pendingProjectCount={props.pendingProjectCount}
         />
-        <div className="flex flex-wrap items-center gap-3">
-          <Input
-            aria-label="جست‌وجوی پروژه"
-            placeholder="جست‌وجوی پروژه"
-            value={props.filter}
-            onChange={(event) => props.onFilterChange(event.target.value)}
-            className="min-w-0 flex-1 sm:max-w-sm"
-          />
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              className="size-4 accent-primary"
-              type="checkbox"
-              checked={props.showArchivedProjects}
-              onChange={(event) => props.onArchivedProjectsChange(event.target.checked)}
-            />
-            نمایش بایگانی‌شده‌ها
-          </label>
-        </div>
+        <FilterRow
+          value={props.filter}
+          onChange={props.onFilterChange}
+          label="جست‌وجوی پروژه"
+          checked={props.showArchivedProjects}
+          onCheckedChange={props.onArchivedProjectsChange}
+          checkboxLabel="نمایش پروژه‌های بایگانی‌شده"
+        />
         <ProjectSection
+          {...props}
           rows={props.visibleProjects}
           budgets={props.data.budgets}
           engagements={props.activeEngagements}
-          owners={props.owners}
           selected={props.selectedProject}
           selectedBudget={props.selectedBudget}
-          locked={props.locked}
-          ownerName={props.ownerName}
+          onOpen={props.onProjectOpen}
           onSave={props.onSaveProject}
-          onClear={props.onClear}
           onEdit={props.onProjectEdit}
           onBudgetEdit={props.onBudgetEdit}
           onLifecycle={props.onProjectLifecycle}
@@ -104,26 +90,24 @@ export function BusinessTabs(props: Props) {
           onKeepServer={props.onKeepServer}
           onRevise={props.onReviseProject}
         />
-      </TabsContent>
-      <TabsContent value="contacts" className="grid gap-4 pt-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <Input
-            aria-label="جست‌وجوی مخاطب"
-            placeholder="جست‌وجوی مخاطب"
-            value={props.filter}
-            onChange={(event) => props.onFilterChange(event.target.value)}
-            className="min-w-0 flex-1 sm:max-w-sm"
-          />
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              className="size-4 accent-primary"
-              type="checkbox"
-              checked={props.showArchivedContacts}
-              onChange={(event) => props.onArchivedContactsChange(event.target.checked)}
-            />
-            نمایش مخاطبان بایگانی‌شده
-          </label>
-        </div>
+      </div>
+    );
+  }
+  if (props.tab === "contacts") {
+    return (
+      <div className="grid gap-5">
+        <PageIntro
+          title="افراد و تأمین‌کنندگان"
+          text="مشخصات نیروها، کارفرماها و تأمین‌کنندگان را در یک فهرست نگه دارید."
+        />
+        <FilterRow
+          value={props.filter}
+          onChange={props.onFilterChange}
+          label="جست‌وجوی فرد یا تأمین‌کننده"
+          checked={props.showArchivedContacts}
+          onCheckedChange={props.onArchivedContactsChange}
+          checkboxLabel="نمایش موارد بایگانی‌شده"
+        />
         <ContactSection
           rows={props.visibleContacts}
           engagements={props.data.engagements}
@@ -136,35 +120,79 @@ export function BusinessTabs(props: Props) {
           onKeepServer={props.onKeepServer}
           onRevise={props.onReviseContact}
         />
-      </TabsContent>
-      <TabsContent value="engagements" className="grid gap-4 pt-3">
-        <Input
-          aria-label="جست‌وجوی همکاری"
-          placeholder="جست‌وجوی همکاری"
-          value={props.filter}
-          onChange={(event) => props.onFilterChange(event.target.value)}
-          className="min-w-0 sm:max-w-sm"
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-5">
+      <PageIntro
+        title="همکاری‌ها"
+        text="هر نیرو را با نوع همکاری و بازهٔ زمانی مشخص به یک پروژه پیوند دهید."
+      />
+      <Input
+        aria-label="جست‌وجوی همکاری"
+        placeholder="نام نیرو یا پروژه"
+        value={props.filter}
+        onChange={(event) => props.onFilterChange(event.target.value)}
+        className="max-w-md bg-card"
+      />
+      <EngagementSection
+        rows={props.activeEngagements.filter(
+          (row) =>
+            !props.filter ||
+            props.workerName(row.data.workerId).includes(props.filter) ||
+            props.projectName(row.data.projectId).includes(props.filter),
+        )}
+        workers={props.workers}
+        projects={props.data.projects}
+        selected={props.selectedEngagement}
+        selectedProjectId={props.selectedProjectId}
+        locked={props.locked}
+        workerName={props.workerName}
+        projectName={props.projectName}
+        onSave={props.onSaveEngagement}
+        onClear={props.onClear}
+        onKeepServer={props.onKeepServer}
+        onRevise={props.onReviseEngagement}
+      />
+    </div>
+  );
+}
+
+function PageIntro({ title, text }: { title: string; text: string }) {
+  return (
+    <header>
+      <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+      <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">{text}</p>
+    </header>
+  );
+}
+
+function FilterRow(props: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+  checkboxLabel: string;
+}) {
+  return (
+    <div className="grid gap-3 rounded-xl border border-border bg-card p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <Input
+        aria-label={props.label}
+        placeholder={props.label}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+      <label className="inline-flex min-h-10 items-center gap-2 text-sm font-medium">
+        <input
+          className="size-4 shrink-0 accent-primary"
+          type="checkbox"
+          checked={props.checked}
+          onChange={(event) => props.onCheckedChange(event.target.checked)}
         />
-        <EngagementSection
-          rows={props.activeEngagements.filter(
-            (row) =>
-              !props.filter ||
-              props.workerName(row.data.workerId).includes(props.filter) ||
-              props.projectName(row.data.projectId).includes(props.filter),
-          )}
-          workers={props.workers}
-          projects={props.data.projects}
-          selected={props.selectedEngagement}
-          selectedProjectId={props.selectedProjectId}
-          locked={props.locked}
-          workerName={props.workerName}
-          projectName={props.projectName}
-          onSave={props.onSaveEngagement}
-          onClear={props.onClear}
-          onKeepServer={props.onKeepServer}
-          onRevise={props.onReviseEngagement}
-        />
-      </TabsContent>
-    </Tabs>
+        {props.checkboxLabel}
+      </label>
+    </div>
   );
 }

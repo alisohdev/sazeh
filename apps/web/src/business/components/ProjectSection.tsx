@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import type { DirectoryRecord } from "../types";
+import type { DirectoryRecord, DirectorySaveResult } from "../types";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectForm } from "./ProjectForm";
 
@@ -12,8 +12,13 @@ type Props = {
   selectedBudget?: DirectoryRecord | undefined;
   locked: boolean;
   ownerName: (id: unknown) => string;
-  onSave: (form: FormData, row?: DirectoryRecord, budgetId?: string) => Promise<boolean>;
+  onSave: (
+    form: FormData,
+    row?: DirectoryRecord,
+    budgetId?: string,
+  ) => Promise<DirectorySaveResult>;
   onClear: () => void;
+  onOpen: (row: DirectoryRecord) => void;
   onEdit: (row: DirectoryRecord) => void;
   onBudgetEdit: (row: DirectoryRecord, budget: DirectoryRecord) => void;
   onLifecycle: (row: DirectoryRecord) => void;
@@ -42,6 +47,7 @@ export function ProjectSection(props: Props) {
             budgets={props.budgets}
             engagements={props.engagements}
             ownerName={props.ownerName}
+            onOpen={props.onOpen}
             onEdit={props.onEdit}
             onBudgetEdit={props.onBudgetEdit}
             onLifecycle={props.onLifecycle}

@@ -1,9 +1,11 @@
 import type { FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import type { DirectoryRecord } from "../types";
-import { isoToJalali } from "../domain";
+import { FormattedNumberInput } from "@/components/formatted-number-input";
+import { PersianDatePicker } from "@/components/persian-date-picker";
+import type { DirectoryRecord, DirectorySaveResult } from "../types";
 import { DirectoryField, selectClassName } from "./DirectoryField";
 
 type Props = {
@@ -11,7 +13,11 @@ type Props = {
   budget?: DirectoryRecord | undefined;
   owners: DirectoryRecord[];
   locked: boolean;
-  onSave: (form: FormData, row?: DirectoryRecord, budgetId?: string) => Promise<boolean>;
+  onSave: (
+    form: FormData,
+    row?: DirectoryRecord,
+    budgetId?: string,
+  ) => Promise<DirectorySaveResult>;
   onCancel: () => void;
 };
 
@@ -54,30 +60,30 @@ export function ProjectForm({ row, budget, owners, locked, onSave, onCancel }: P
             </select>
           </DirectoryField>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <DirectoryField label="شروع (جلالی)">
-              <Input
+            <Field>
+              <FieldLabel htmlFor="project-start">شروع</FieldLabel>
+              <PersianDatePicker
+                id="project-start"
                 name="startsOn"
-                defaultValue={isoToJalali(row?.data.startsOn)}
-                placeholder="۱۴۰۵/۰۷/۰۶"
-                inputMode="numeric"
+                defaultValue={row?.data.startsOn}
               />
-            </DirectoryField>
-            <DirectoryField label="پایان (جلالی)">
-              <Input
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="project-end">پایان</FieldLabel>
+              <PersianDatePicker
+                id="project-end"
                 name="endsOn"
-                defaultValue={isoToJalali(row?.data.endsOn)}
-                placeholder="۱۴۰۵/۱۲/۲۹"
-                inputMode="numeric"
+                defaultValue={row?.data.endsOn}
+                placeholder="بدون تاریخ پایان"
+                allowClear
               />
-            </DirectoryField>
+            </Field>
           </div>
           <DirectoryField label="مبلغ اولیهٔ قرارداد (تومان)">
-            <Input
+            <FormattedNumberInput
               name="contractInitialToman"
-              inputMode="numeric"
               defaultValue={String(row?.data.contractInitialToman ?? "0")}
               required
-              pattern="[0-9۰-۹٠-٩]+"
             />
           </DirectoryField>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -90,10 +96,8 @@ export function ProjectForm({ row, budget, owners, locked, onSave, onCancel }: P
               />
             </DirectoryField>
             <DirectoryField label="مبلغ ردیف بودجه (تومان)">
-              <Input
+              <FormattedNumberInput
                 name="budgetAmountToman"
-                inputMode="numeric"
-                pattern="[0-9۰-۹٠-٩]*"
                 defaultValue={String(budget?.data.amountToman ?? "0")}
               />
             </DirectoryField>

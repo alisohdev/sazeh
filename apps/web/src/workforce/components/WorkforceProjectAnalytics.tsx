@@ -26,7 +26,7 @@ export function WorkforceProjectAnalytics({
             <span>
               {row.projectName}
               <small className="block text-muted-foreground">
-                {row.entryIds.length} سند نهایی · {row.pending.count} پیش‌نویس
+                {row.entryIds.length} سند نهایی، {row.pending.count} پیش‌نویس
               </small>
             </span>
             <strong>{formatToman(row.totals.remainingBalanceToman)}</strong>

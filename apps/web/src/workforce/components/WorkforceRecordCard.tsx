@@ -14,7 +14,7 @@ type Props = {
   onEdit: (record: WorkforceServerRecord) => void;
 };
 const kindLabel = (record: WorkforceServerRecord) => {
-  if (record.kind === "EARNING") return `دستمزد · ${record.engagementType ?? ""}`;
+  if (record.kind === "EARNING") return `دستمزد، ${record.engagementType ?? ""}`;
   if (record.kind === "DEDUCTION") return "کسورات";
   return record.paymentKind === "ADVANCE" ? "مساعده / علی‌الحساب" : "پرداخت به کارگر";
 };
@@ -33,7 +33,7 @@ export function WorkforceRecordCard({
   const amount = record.reversalOfId ? `−${record.amountToman}` : record.amountToman;
   const status =
     record.status === "DRAFT"
-      ? "پیش‌نویس سرور · نیازمند بررسی"
+      ? "پیش‌نویس سرور، نیازمند بررسی"
       : record.status === "REVERSED"
         ? "برگشت‌خورده؛ سابقه حفظ شده"
         : "نهایی‌شده";
@@ -65,7 +65,7 @@ export function WorkforceRecordCard({
           <div>
             <p className="font-medium">{kindLabel(record)}</p>
             <p className="text-xs text-muted-foreground">
-              {record.businessDate} · {record.projectName}
+              {record.businessDate}، {record.projectName}
             </p>
           </div>
           <strong

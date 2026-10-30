@@ -1,12 +1,21 @@
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { CircleAlertIcon } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import type { DirectoryRecord } from "../types";
-import { isoToJalali } from "../domain";
-import { DirectoryField, selectClassName } from "./DirectoryField";
-
-const engagementTypes = ["DAILY", "HOURLY", "QUANTITY", "MONTHLY", "FIXED_CONTRACT", "MANUAL"];
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { FormattedNumberInput } from "@/components/formatted-number-input";
+import { PersianDatePicker } from "@/components/persian-date-picker";
+import { engagementTypeLabel, engagementTypes } from "../engagement-types";
+import type { DirectoryRecord, DirectorySaveResult } from "../types";
 
 type Props = {
   row?: DirectoryRecord | undefined;
@@ -14,123 +23,171 @@ type Props = {
   projects: DirectoryRecord[];
   selectedProjectId?: string | undefined;
   locked: boolean;
-  onSave: (form: FormData, row?: DirectoryRecord) => Promise<boolean>;
+  onSave: (form: FormData, row?: DirectoryRecord) => Promise<DirectorySaveResult>;
   onCancel: () => void;
 };
 
-export function EngagementForm({
-  row,
-  workers,
-  projects,
-  selectedProjectId,
-  locked,
-  onSave,
-  onCancel,
-}: Props) {
-  function submit(event: FormEvent<HTMLFormElement>) {
+export function EngagementForm(props: Props) {
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { row } = props;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void onSave(new FormData(event.currentTarget), row);
+    const form = new FormData(event.currentTarget);
+    const missing = requiredMessage(form);
+    if (missing) {
+      setError(missing);
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      const result = await props.onSave(form, row);
+      if (!result.ok) setError(result.error);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Card className="min-w-0">
       <CardHeader>
-        <CardTitle>
-          <h3>پیوند نیروی کار به پروژه</h3>
-        </CardTitle>
+        <CardTitle>پیوند نیروی کار به پروژه</CardTitle>
       </CardHeader>
       <CardContent>
-        <form key={row?.id ?? "new-engagement"} className="grid gap-4" onSubmit={submit}>
-          <DirectoryField label="نیرو">
-            <select
-              className={selectClassName}
+        <form key={row?.id ?? "new-engagement"} onSubmit={submit} noValidate>
+          <FieldGroup>
+            <DirectorySelect
+              label="نیرو"
               name="workerId"
+              placeholder="انتخاب نیروی کار"
               defaultValue={String(row?.data.workerId ?? "")}
-              required
-            >
-              <option value="">انتخاب نیرو</option>
-              {workers
+              options={props.workers
                 .filter(
                   (worker) => worker.data.archived !== true || worker.id === row?.data.workerId,
                 )
-                .map((worker) => (
-                  <option key={worker.id} value={worker.id}>
-                    {String(worker.data.displayName)}
-                    {worker.data.archived === true ? " (بایگانی‌شده)" : ""}
-                  </option>
-                ))}
-            </select>
-          </DirectoryField>
-          <DirectoryField label="پروژه">
-            <select
-              className={selectClassName}
+                .map((worker) => ({
+                  value: worker.id,
+                  label: `${String(worker.data.displayName)}${worker.data.archived ? " (بایگانی‌شده)" : ""}`,
+                }))}
+            />
+            <DirectorySelect
+              label="پروژه"
               name="projectId"
-              defaultValue={String(row?.data.projectId ?? selectedProjectId ?? "")}
-              required
-            >
-              <option value="">انتخاب پروژهٔ فعال</option>
-              {projects
+              placeholder="انتخاب پروژهٔ فعال"
+              defaultValue={String(row?.data.projectId ?? props.selectedProjectId ?? "")}
+              options={props.projects
                 .filter(
                   (project) =>
                     project.data.lifecycle === "ACTIVE" || project.id === row?.data.projectId,
                 )
-                .map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {String(project.data.name)}
-                    {project.data.lifecycle === "ARCHIVED" ? " (بایگانی‌شده)" : ""}
-                  </option>
-                ))}
-            </select>
-          </DirectoryField>
-          <DirectoryField label="نوع همکاری">
-            <select
-              className={selectClassName}
+                .map((project) => ({
+                  value: project.id,
+                  label: `${String(project.data.name)}${project.data.lifecycle === "ARCHIVED" ? " (بایگانی‌شده)" : ""}`,
+                }))}
+            />
+            <DirectorySelect
+              label="نوع همکاری"
               name="type"
               defaultValue={String(row?.data.type ?? "DAILY")}
-            >
-              {engagementTypes.map((type) => (
-                <option key={type}>{type}</option>
-              ))}
-            </select>
-          </DirectoryField>
-          <DirectoryField label="نرخ پیش‌فرض (تومان)">
-            <Input
-              name="defaultRateToman"
-              inputMode="numeric"
-              defaultValue={String(row?.data.defaultRateToman ?? "")}
-              required
-              pattern="[0-9۰-۹٠-٩]+"
+              options={engagementTypes.map((type) => ({
+                value: type,
+                label: engagementTypeLabel(type),
+              }))}
             />
-          </DirectoryField>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <DirectoryField label="شروع (جلالی)">
-              <Input
-                name="startsOn"
-                defaultValue={isoToJalali(row?.data.startsOn)}
-                placeholder="۱۴۰۵/۰۷/۰۶"
-                inputMode="numeric"
+            <Field>
+              <FieldLabel htmlFor="engagement-rate">نرخ پیش‌فرض (تومان)</FieldLabel>
+              <FormattedNumberInput
+                id="engagement-rate"
+                name="defaultRateToman"
+                defaultValue={String(row?.data.defaultRateToman ?? "")}
                 required
               />
-            </DirectoryField>
-            <DirectoryField label="پایان (جلالی، خالی یعنی ادامه دارد)">
-              <Input
-                name="endsOn"
-                defaultValue={isoToJalali(row?.data.endsOn)}
-                placeholder="۱۴۰۵/۱۲/۲۹"
-                inputMode="numeric"
-              />
-            </DirectoryField>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={locked}>ذخیرهٔ همکاری</Button>
-            {row && (
-              <Button type="button" variant="outline" onClick={onCancel}>
-                لغو ویرایش
-              </Button>
+            </Field>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="engagement-start">شروع</FieldLabel>
+                <PersianDatePicker
+                  id="engagement-start"
+                  name="startsOn"
+                  defaultValue={row?.data.startsOn}
+                  required
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="engagement-end">پایان</FieldLabel>
+                <PersianDatePicker
+                  id="engagement-end"
+                  name="endsOn"
+                  defaultValue={row?.data.endsOn}
+                  placeholder="بدون تاریخ پایان"
+                  allowClear
+                />
+                <FieldDescription>
+                  برای همکاری ادامه‌دار، تاریخ پایان را خالی بگذارید.
+                </FieldDescription>
+              </Field>
+            </div>
+            {error && (
+              <Alert variant="destructive">
+                <CircleAlertIcon />
+                <AlertTitle>همکاری ذخیره نشد</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
-          </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={props.locked || saving}>
+                {saving ? "در حال ذخیره…" : "ذخیرهٔ همکاری"}
+              </Button>
+              {row && (
+                <Button type="button" variant="outline" onClick={props.onCancel}>
+                  لغو ویرایش
+                </Button>
+              )}
+            </div>
+          </FieldGroup>
         </form>
       </CardContent>
     </Card>
   );
+}
+
+function DirectorySelect(props: {
+  label: string;
+  name: string;
+  defaultValue: string;
+  placeholder?: string;
+  options: Array<{ value: string; label: string }>;
+}) {
+  const id = `engagement-${props.name}`;
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+      <Select dir="rtl" name={props.name} defaultValue={props.defaultValue || undefined} required>
+        <SelectTrigger id={id} className="h-10 w-full">
+          <SelectValue placeholder={props.placeholder} />
+        </SelectTrigger>
+        <SelectContent dir="rtl">
+          <SelectGroup>
+            {props.options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+}
+
+function requiredMessage(form: FormData) {
+  if (!form.get("workerId")) return "ابتدا نیروی کار را انتخاب کنید.";
+  if (!form.get("projectId")) return "ابتدا پروژه را انتخاب کنید.";
+  if (!String(form.get("defaultRateToman") ?? "").replaceAll(",", "")) {
+    return "نرخ همکاری را وارد کنید.";
+  }
+  if (!form.get("startsOn")) return "تاریخ شروع را انتخاب کنید.";
+  return "";
 }

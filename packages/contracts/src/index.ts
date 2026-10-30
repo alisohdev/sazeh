@@ -7,6 +7,7 @@ export const DraftCreateCommandSchema = z
     entityId: z.uuid(),
     expectedVersion: z.literal(0),
     kind: z.literal("CREATE_NOTE_DRAFT"),
+    projectId: z.uuid().nullable().optional(),
     text: z.string().trim().min(1).max(4000),
   })
   .strict();
@@ -15,6 +16,7 @@ export const ServerDraftSchema = z
   .object({
     id: z.uuid(),
     authorUserId: z.uuid(),
+    projectId: z.uuid().nullable().optional(),
     text: z.string().min(1).max(4000),
     version: z.literal(1),
     status: z.literal("DRAFT"),
@@ -47,6 +49,7 @@ export type DraftAcknowledgement = z.infer<typeof DraftAcknowledgementSchema>;
 
 export type DraftView = {
   id: string;
+  projectId?: string;
   text: string;
   savedAt: string;
   syncState:

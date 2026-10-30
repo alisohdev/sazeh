@@ -31,7 +31,7 @@ The M1a migration adds nullable `author_user_id` to `note_drafts`. Existing synt
 | refresh_tokens | tokenHash, sessionId, generation, issuedAt, consumedAt; retain consumed hashes through session expiry |
 | login_buckets | hashed normalized username or client address, failed-attempt count, resetAt |
 | account_audit | actorUserId, actorSessionId, targetUserId, action, createdAt; no password values |
-| note_drafts | authorUserId nullable only for unowned M0 legacy rows, text, version, status, createdAt |
+| note_drafts | authorUserId nullable only for unowned M0 legacy rows, projectId nullable for legacy/pre-migration notes, text, version, status, createdAt |
 | projects | name, ownerContactId, business dates, lifecycle, contract initial value, version |
 | contract_amendments | projectId, signed change amount, reason, businessDate, finalized metadata |
 | budgets | projectId, category, amount; changes audited, baseline retained |

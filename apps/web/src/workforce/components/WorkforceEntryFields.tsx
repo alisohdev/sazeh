@@ -2,7 +2,11 @@ import type { FormEvent } from "react";
 import type { WorkforceRecordInput } from "@sazeh/contracts";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Field, FieldLabel } from "../../components/ui/field";
+import { FormattedNumberInput } from "../../components/formatted-number-input";
+import { PersianDatePicker } from "../../components/persian-date-picker";
 import { Input } from "../../components/ui/input";
+import { engagementTypeLabel } from "../../business/engagement-types";
 import type { DirectoryRecord } from "../../business/types";
 
 type Props = {
@@ -25,15 +29,6 @@ type Props = {
   onRateChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
-const typeLabels: Record<string, string> = {
-  DAILY: "روزانه",
-  HOURLY: "ساعتی",
-  QUANTITY: "مقداری",
-  MONTHLY: "ماهانه",
-  FIXED_CONTRACT: "قراردادی",
-  MANUAL: "دستی",
-};
-
 export function WorkforceEntryFields(props: Props) {
   return (
     <Card dir="rtl" className="border-border/70">
@@ -63,8 +58,8 @@ export function WorkforceEntryFields(props: Props) {
                 const project = props.projects.find((item) => item.id === row.data.projectId);
                 return (
                   <option key={row.id} value={row.id}>
-                    {String(worker?.data.displayName ?? "کارگر")} ·{" "}
-                    {String(project?.data.name ?? "پروژه")} · {typeLabels[String(row.data.type)]}
+                    {String(worker?.data.displayName ?? "کارگر")}،{" "}
+                    {String(project?.data.name ?? "پروژه")}، {engagementTypeLabel(row.data.type)}
                   </option>
                 );
               })}
@@ -82,16 +77,15 @@ export function WorkforceEntryFields(props: Props) {
               <option value="WORKER_PAYMENT">پرداخت به کارگر</option>
             </select>
           </label>
-          <label className="grid gap-1 text-sm">
-            تاریخ کار
-            <input
-              className="h-10 rounded-lg border border-input bg-background px-3"
-              type="date"
+          <Field>
+            <FieldLabel htmlFor="workforce-business-date">تاریخ کار</FieldLabel>
+            <PersianDatePicker
+              id="workforce-business-date"
               name="businessDate"
               required
-              defaultValue={props.initial?.businessDate ?? new Date().toISOString().slice(0, 10)}
+              defaultValue={props.initial?.businessDate ?? todayIso()}
             />
-          </label>
+          </Field>
           {props.kind === "EARNING" && props.calculated ? (
             <>
               <label className="grid gap-1 text-sm">
@@ -108,8 +102,7 @@ export function WorkforceEntryFields(props: Props) {
               </label>
               <label className="grid gap-1 text-sm">
                 نرخ (تومان)
-                <Input
-                  inputMode="numeric"
+                <FormattedNumberInput
                   required
                   value={props.rate}
                   onChange={(event) => props.onRateChange(event.target.value)}
@@ -123,9 +116,8 @@ export function WorkforceEntryFields(props: Props) {
                 : props.kind === "DEDUCTION"
                   ? "مبلغ کسر (تومان)"
                   : "مبلغ پرداخت (تومان)"}
-              <Input
+              <FormattedNumberInput
                 name="amountToman"
-                inputMode="numeric"
                 required
                 defaultValue={
                   props.initial && "amountToman" in props.initial ? props.initial.amountToman : ""
@@ -161,7 +153,7 @@ export function WorkforceEntryFields(props: Props) {
           )}
           {props.worker && props.project && (
             <p className="text-xs text-muted-foreground sm:col-span-2">
-              {String(props.worker.data.displayName)} · {String(props.project.data.name)} · جمع مبلغ
+              {String(props.worker.data.displayName)}، {String(props.project.data.name)}، جمع مبلغ
               محاسباتی هنگام همگام‌سازی روی سرور تعیین می‌شود.
             </p>
           )}
@@ -181,4 +173,13 @@ export function WorkforceEntryFields(props: Props) {
       </CardContent>
     </Card>
   );
+}
+
+function todayIso() {
+  const today = new Date();
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
 }

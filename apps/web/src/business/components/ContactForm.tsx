@@ -2,13 +2,13 @@ import type { FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { DirectoryRecord } from "../types";
+import type { DirectoryRecord, DirectorySaveResult } from "../types";
 import { DirectoryField } from "./DirectoryField";
 
 type Props = {
   row?: DirectoryRecord | undefined;
   locked: boolean;
-  onSave: (form: FormData, row?: DirectoryRecord) => Promise<boolean>;
+  onSave: (form: FormData, row?: DirectoryRecord) => Promise<DirectorySaveResult>;
   onCancel: () => void;
 };
 

@@ -24,6 +24,7 @@ export async function createDraft(
     draft: {
       id: command.entityId,
       authorUserId: principal.userId,
+      projectId: command.projectId ?? null,
       text: command.text,
       version: 1,
       status: "DRAFT",
@@ -74,6 +75,7 @@ export async function createDraft(
       .values({
         id: command.entityId,
         authorUserId: principal.userId,
+        projectId: command.projectId ?? null,
         text: command.text,
         version: 1,
         status: "DRAFT",
@@ -98,6 +100,7 @@ function hashCommand(command: DraftCreateCommand): string {
     entityId: command.entityId,
     expectedVersion: command.expectedVersion,
     kind: command.kind,
+    ...(command.projectId !== undefined ? { projectId: command.projectId } : {}),
     text: command.text,
   });
   return createHash("sha256").update(canonical).digest("hex");

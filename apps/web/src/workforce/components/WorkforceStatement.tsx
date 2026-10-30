@@ -25,7 +25,7 @@ export function WorkforceStatement(props: StatementProps) {
     )
     .filter((draft) => matchesFilter(draft, props.filter));
   return (
-    <div className="grid gap-4" dir="rtl">
+    <div id="workforce-statement" className="grid gap-4" dir="rtl">
       <WorkforceStatementFilters
         filter={props.filter}
         workers={props.workers}

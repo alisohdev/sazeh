@@ -126,13 +126,71 @@ test("offline workforce draft survives refresh, replays a lost reply, and requir
   });
   await expect(page.getByText("مانده ابتدای دوره")).toBeVisible();
   await expect(page.getByText("مانده پایان دوره")).toBeVisible();
-  await page.screenshot({
+  await page.locator("#workforce-statement").screenshot({
     path: resolve(screenshotDirectory, "m2-mobile-worker-statement.png"),
-    fullPage: true,
+    animations: "disabled",
   });
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
     .toBe(true);
+
+  const lab01WorkerId = requiredEnv("M2_REVIEW_LAB01_WORKER_ID");
+  const lab01ProjectId = requiredEnv("M2_REVIEW_LAB01_PROJECT_ID");
+  const periodWorkerId = requiredEnv("M2_REVIEW_PERIOD_WORKER_ID");
+  const periodProjectId = requiredEnv("M2_REVIEW_PERIOD_PROJECT_ID");
+  const reviewStatement = page.locator("#workforce-statement");
+  const lab01Report = waitForStatementReport(page, {
+    workerId: lab01WorkerId,
+    projectId: lab01ProjectId,
+  });
+  await reviewStatement.locator("select").nth(0).selectOption(lab01WorkerId);
+  await reviewStatement.locator("select").nth(1).selectOption(lab01ProjectId);
+  expect(await (await lab01Report).json()).toMatchObject({
+    totals: {
+      grossEarningsToman: "3000000",
+      deductionsToman: "200000",
+      netEarningsToman: "2800000",
+      paymentsToman: "1500000",
+      remainingBalanceToman: "1300000",
+    },
+    balances: { openingBalanceToman: "0", closingBalanceToman: "1300000" },
+  });
+  const lab01Closing = await page.evaluate(() => new Intl.NumberFormat("fa-IR").format(1_300_000));
+  await expect(reviewStatement).toContainText(lab01Closing);
+  await expect(reviewStatement.getByRole("status")).toHaveCount(0);
+  await reviewStatement.screenshot({
+    path: resolve(screenshotDirectory, "m2-mobile-worker-statement.png"),
+    animations: "disabled",
+  });
+
+  const periodReport = waitForStatementReport(page, {
+    workerId: periodWorkerId,
+    projectId: periodProjectId,
+    from: "2026-10-28",
+    to: "2026-10-28",
+  });
+  await reviewStatement.locator("select").nth(0).selectOption(periodWorkerId);
+  await reviewStatement.locator("select").nth(1).selectOption(periodProjectId);
+  await reviewStatement.locator('input[type="date"]').nth(0).fill("2026-10-28");
+  await reviewStatement.locator('input[type="date"]').nth(1).fill("2026-10-28");
+  expect(await (await periodReport).json()).toMatchObject({
+    totals: {
+      grossEarningsToman: "0",
+      deductionsToman: "0",
+      netEarningsToman: "0",
+      paymentsToman: "200000",
+      remainingBalanceToman: "-200000",
+    },
+    balances: { openingBalanceToman: "1000000", closingBalanceToman: "800000" },
+  });
+  const periodClosing = await page.evaluate(() => new Intl.NumberFormat("fa-IR").format(800_000));
+  await expect(reviewStatement).toContainText(periodClosing);
+  await expect(reviewStatement.getByRole("status")).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await reviewStatement.screenshot({
+    path: resolve(screenshotDirectory, "m2-mobile-worker-statement-period-balance.png"),
+    animations: "disabled",
+  });
 });
 
 test("failed workforce upload preserves an edit made while the request is pending", async ({
@@ -228,6 +286,26 @@ async function signIn(page: Page, username: string, password: string) {
   await page.getByRole("button", { name: "ورود", exact: true }).click();
   expect((await loginResponse).status()).toBe(200);
   await expect(page.getByRole("heading", { name: "پروژه‌ها و فهرست‌ها" })).toBeVisible();
+}
+
+function waitForStatementReport(
+  page: Page,
+  filter: { workerId: string; projectId: string; from?: string; to?: string },
+) {
+  return page.waitForResponse(
+    (response) => {
+      if (!response.url().includes("/api/v1/workforce/records?") || response.status() !== 200)
+        return false;
+      const url = new URL(response.url());
+      return (
+        url.searchParams.get("workerId") === filter.workerId &&
+        url.searchParams.get("projectId") === filter.projectId &&
+        (url.searchParams.get("from") ?? undefined) === filter.from &&
+        (url.searchParams.get("to") ?? undefined) === filter.to
+      );
+    },
+    { timeout: 45_000 },
+  );
 }
 
 function requiredEnv(name: string): string {

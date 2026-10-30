@@ -247,12 +247,22 @@ export class ProcurementService {
           .where(inArray(procurementLines.documentId, documentIds))
       : [];
     if (filter.materialId) lines = lines.filter((line) => line.materialId === filter.materialId);
+    const lineMap = new Map<string, LineRow[]>();
+    for (const line of lines)
+      lineMap.set(line.documentId, [...(lineMap.get(line.documentId) ?? []), line]);
     const visibleDocumentIds = filter.materialId
       ? new Set(lines.map((line) => line.documentId))
       : new Set(documentIds);
-    const visibleDocuments = documents.filter(
-      (row) => visibleDocumentIds.has(row.id) || row.kind === "SUPPLIER_PAYMENT",
-    );
+    for (const row of documents)
+      if (row.reversalOfId && visibleDocumentIds.has(row.reversalOfId)) {
+        visibleDocumentIds.add(row.id);
+        const sourceLines = lineMap.get(row.reversalOfId) ?? [];
+        lineMap.set(
+          row.id,
+          sourceLines.map((line) => ({ ...line, documentId: row.id })),
+        );
+      }
+    const visibleDocuments = documents.filter((row) => visibleDocumentIds.has(row.id));
     const [projectRows, supplierRows, materialRows, balances] = await Promise.all([
       this.db.select().from(projects),
       this.db.select().from(contacts),
@@ -270,9 +280,6 @@ export class ProcurementService {
     const projectNames = new Map(projectRows.map((row) => [row.id, row.name]));
     const supplierNames = new Map(supplierRows.map((row) => [row.id, row.displayName]));
     const materialNames = new Map(materialRows.map((row) => [row.id, row.name]));
-    const lineMap = new Map<string, LineRow[]>();
-    for (const line of lines)
-      lineMap.set(line.documentId, [...(lineMap.get(line.documentId) ?? []), line]);
     const finalized = visibleDocuments.filter((row) => row.status !== "DRAFT");
     const signed = (row: DocumentRow) => (row.reversalOfId ? -1n : 1n);
     const invoices = finalized.filter((row) => row.kind === "PURCHASE_INVOICE");
@@ -280,10 +287,30 @@ export class ProcurementService {
     const supplierReturns = finalized.filter((row) => row.kind === "SUPPLIER_RETURN");
     const issues = finalized.filter((row) => row.kind === "STOCK_ISSUE");
     const consumptionReturns = finalized.filter((row) => row.kind === "STOCK_RETURN");
-    const procurement = sum(invoices.map((row) => signed(row) * BigInt(row.totalToman)));
-    const supplierCredits = sum(supplierReturns.map((row) => BigInt(row.totalToman)));
+    const invoiceAmount = (row: DocumentRow) =>
+      sum((lineMap.get(row.id) ?? []).map((line) => BigInt(line.lineTotalToman)));
+    const supplierCreditAmount = (row: DocumentRow) =>
+      sum((lineMap.get(row.id) ?? []).map((line) => BigInt(line.supplierCreditToman ?? "0")));
+    const procurement = sum(invoices.map((row) => signed(row) * invoiceAmount(row)));
+    const supplierCredits = sum(
+      supplierReturns.map((row) => signed(row) * supplierCreditAmount(row)),
+    );
     const paid = sum(payments.map((row) => signed(row) * BigInt(row.totalToman)));
-    const debt = procurement - supplierCredits - paid;
+    const supplierProjectBalances = new Map<string, bigint>();
+    const addBalance = (row: DocumentRow, amount: bigint) => {
+      if (!row.supplierId) return;
+      const key = `${row.projectId}:${row.supplierId}`;
+      supplierProjectBalances.set(key, (supplierProjectBalances.get(key) ?? 0n) + amount);
+    };
+    for (const row of invoices) addBalance(row, signed(row) * invoiceAmount(row));
+    for (const row of supplierReturns) addBalance(row, -signed(row) * supplierCreditAmount(row));
+    for (const row of payments) addBalance(row, -signed(row) * BigInt(row.totalToman));
+    const outstandingDebt = sum(
+      [...supplierProjectBalances.values()].filter((amount) => amount > 0n),
+    );
+    const supplierAdvance = -sum(
+      [...supplierProjectBalances.values()].filter((amount) => amount < 0n),
+    );
     const consumed =
       sum(
         issues.flatMap((row) =>
@@ -308,8 +335,8 @@ export class ProcurementService {
         procurementToman: procurement.toString(),
         supplierCreditsToman: supplierCredits.toString(),
         paymentsToman: paid.toString(),
-        outstandingDebtToman: (debt > 0n ? debt : 0n).toString(),
-        supplierAdvanceToman: (debt < 0n ? -debt : 0n).toString(),
+        outstandingDebtToman: outstandingDebt.toString(),
+        supplierAdvanceToman: supplierAdvance.toString(),
         stockValueToman: stockValue.toString(),
         consumptionCostToman: consumed.toString(),
         valuationAdjustmentToman: valuationAdjustment.toString(),
@@ -671,6 +698,7 @@ export class ProcurementService {
         code: "INVALID_RECEIPT_INVOICE",
         message: "Receipt must reference a finalized invoice for the same supplier and project",
       });
+    this.requireUniqueSourceLines(lines);
     for (const line of lines) {
       if (!line.sourceLineId)
         throw new ConflictException({
@@ -702,6 +730,19 @@ export class ProcurementService {
     }
   }
 
+  private requireUniqueSourceLines(lines: LineRow[]) {
+    const sourceLineIds = new Set<string>();
+    for (const line of lines) {
+      if (!line.sourceLineId) continue;
+      if (sourceLineIds.has(line.sourceLineId))
+        throw new ConflictException({
+          code: "DUPLICATE_SOURCE_LINE",
+          message: "A source line can be referenced only once per document",
+        });
+      sourceLineIds.add(line.sourceLineId);
+    }
+  }
+
   private async postReceipt(tx: Tx, document: DocumentRow, lines: LineRow[]) {
     const balances = await this.lockBalances(
       tx,
@@ -709,7 +750,31 @@ export class ProcurementService {
     );
     for (const line of lines) {
       const quantity = parseStoredQuantity(line.quantity);
-      const value = invoiceLineTotal(line.quantity, line.unitPriceToman ?? "0");
+      const [source] = await tx
+        .select()
+        .from(procurementLines)
+        .where(eq(procurementLines.id, line.sourceLineId!))
+        .limit(1)
+        .for("update");
+      if (!source) throw new Error("Receipt source line disappeared");
+      const receivedQuantity = await this.finalizedLinkedQuantity(
+        tx,
+        "STOCK_RECEIPT",
+        source.id,
+        document.id,
+      );
+      const receivedValue = await this.finalizedLinkedValue(
+        tx,
+        "STOCK_RECEIPT",
+        source.id,
+        document.id,
+        "carrying",
+      );
+      const value = proportionalValue(
+        quantity,
+        parseStoredQuantity(source.quantity) - receivedQuantity,
+        BigInt(source.lineTotalToman) - receivedValue,
+      );
       const balance = balances.get(balanceKey(document.projectId, line.materialId))!;
       const updated = await this.setBalance(
         tx,
@@ -834,6 +899,7 @@ export class ProcurementService {
   }
 
   private async postConsumptionReturn(tx: Tx, document: DocumentRow, lines: LineRow[]) {
+    this.requireUniqueSourceLines(lines);
     const balances = await this.lockBalances(
       tx,
       lines.map((line) => ({ projectId: document.projectId, materialId: line.materialId })),
@@ -890,6 +956,7 @@ export class ProcurementService {
   }
 
   private async postSupplierReturn(tx: Tx, document: DocumentRow, lines: LineRow[]) {
+    this.requireUniqueSourceLines(lines);
     const balances = await this.lockBalances(
       tx,
       lines.map((line) => ({ projectId: document.projectId, materialId: line.materialId })),
@@ -909,6 +976,13 @@ export class ProcurementService {
         source.id,
         document.id,
       );
+      const returnedCredit = await this.finalizedLinkedValue(
+        tx,
+        "SUPPLIER_RETURN",
+        source.id,
+        document.id,
+        "supplierCredit",
+      );
       const remainingSourceQuantity = parseStoredQuantity(source.quantity) - returnedQuantity;
       const quantity = parseStoredQuantity(line.quantity);
       if (quantity > remainingSourceQuantity)
@@ -923,7 +997,11 @@ export class ProcurementService {
         parseStoredQuantity(balance.quantity),
         BigInt(balance.carryingValueToman),
       );
-      const credit = invoiceLineTotal(line.quantity, source.unitPriceToman ?? "0");
+      const credit = proportionalValue(
+        quantity,
+        remainingSourceQuantity,
+        BigInt(source.lineTotalToman) - returnedCredit,
+      );
       const adjustment = carrying - credit;
       totalCredit += credit;
       balances.set(
@@ -1088,10 +1166,14 @@ export class ProcurementService {
     kind: DocumentRow["kind"],
     sourceLineId: string,
     excludingId: string,
-    value: "carrying",
+    value: "carrying" | "supplierCredit",
   ) {
+    const amountColumn =
+      value === "carrying"
+        ? procurementLines.carryingValueToman
+        : procurementLines.supplierCreditToman;
     const rows = await tx
-      .select({ amount: procurementLines.carryingValueToman })
+      .select({ amount: amountColumn })
       .from(procurementLines)
       .innerJoin(procurementDocuments, eq(procurementDocuments.id, procurementLines.documentId))
       .where(
@@ -1102,7 +1184,6 @@ export class ProcurementService {
           ne(procurementDocuments.id, excludingId),
         ),
       );
-    void value;
     return sum(rows.map((row) => BigInt(row.amount ?? "0")));
   }
 
@@ -1423,7 +1504,9 @@ function aggregateInvoices(
   for (const invoice of invoices) {
     const id = key(invoice);
     const row = rows.get(id) ?? { id, name: names.get(id) ?? "", amountToman: 0n, sourceIds: [] };
-    row.amountToman += (invoice.reversalOfId ? -1n : 1n) * BigInt(invoice.totalToman);
+    row.amountToman +=
+      (invoice.reversalOfId ? -1n : 1n) *
+      sum((lines.get(invoice.id) ?? []).map((line) => BigInt(line.lineTotalToman)));
     row.sourceIds.push(invoice.id);
     rows.set(id, row);
   }

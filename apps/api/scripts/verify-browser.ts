@@ -405,7 +405,7 @@ async function main(): Promise<void> {
     }
     process.stdout.write(
       browserArgs.length === 0
-        ? "Browser M1a/M1b/M2 verification passed: authenticated offline notes and directories, sync recovery, account isolation, parent ordering, conflict resolution, workforce lost-reply replay, explicit finalization and mobile RTL.\n"
+        ? "Browser M1a/M1b/M2/M3 verification passed: authenticated offline notes and directories, sync recovery, account isolation, parent ordering, conflict resolution, workforce and procurement lost-reply replay, explicit finalization and mobile RTL.\n"
         : "Filtered authenticated browser verification passed.\n",
     );
   } finally {
@@ -439,9 +439,9 @@ async function main(): Promise<void> {
       await tx.delete(workforceRecords).where(inArray(workforceRecords.createdBy, ids));
       await tx.delete(engagements).where(inArray(engagements.createdBy, ids));
       await tx.delete(projectBudgets).where(inArray(projectBudgets.updatedBy, ids));
+      await tx.delete(noteDrafts).where(inArray(noteDrafts.authorUserId, ids));
       await tx.delete(projects).where(inArray(projects.createdBy, ids));
       await tx.delete(contacts).where(inArray(contacts.createdBy, ids));
-      await tx.delete(noteDrafts).where(inArray(noteDrafts.authorUserId, ids));
       await tx.delete(authenticatedReceipts).where(inArray(authenticatedReceipts.userId, ids));
       const fixtureSessions = await tx
         .select({ id: sessions.id })

@@ -18,7 +18,7 @@ const ids = {
   sessions: [randomUUID(), randomUUID()],
   projects: [randomUUID(), randomUUID()],
   suppliers: [randomUUID(), randomUUID()],
-  materials: [randomUUID(), randomUUID(), randomUUID()],
+  materials: [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()],
 };
 
 const principals: Principal[] = ids.users.map((userId, index) => ({
@@ -454,6 +454,236 @@ async function verifyPartialDeliveryAndFinance() {
   );
 }
 
+async function verifyDuplicateReceiptReferences() {
+  const materialId = ids.materials[3]!;
+  const invoice = await draft({
+    kind: "PURCHASE_INVOICE",
+    projectId: ids.projects[0]!,
+    supplierId: ids.suppliers[0]!,
+    businessDate: "2026-10-23",
+    description: "Duplicate receipt source regression",
+    receiveAllNow: false,
+    lines: [line(materialId, "100", "10")],
+  });
+  await finalize(invoice);
+  const receipt = await draft({
+    kind: "STOCK_RECEIPT",
+    projectId: ids.projects[0]!,
+    supplierId: ids.suppliers[0]!,
+    invoiceId: invoice.id,
+    businessDate: "2026-10-24",
+    description: "Two receipt lines against one invoice line",
+    lines: [
+      { id: randomUUID(), invoiceLineId: invoice.lines[0]!.id, quantity: "60" },
+      { id: randomUUID(), invoiceLineId: invoice.lines[0]!.id, quantity: "60" },
+    ],
+  });
+  await expectRejected(finalize(receipt), "DUPLICATE_SOURCE_LINE");
+  assert.deepEqual(pickBalance(await balance(ids.projects[0]!, materialId)), {
+    quantity: "0.000",
+    carryingValueToman: "0",
+  });
+
+  const sourceReceipt = await invoiceAndReceipt(materialId, "100", "10");
+  await invoiceAndReceipt(materialId, "100", "10");
+  const supplierReturn = await draft({
+    kind: "SUPPLIER_RETURN",
+    projectId: ids.projects[0]!,
+    supplierId: ids.suppliers[0]!,
+    sourceDocumentId: sourceReceipt.receipt.id,
+    businessDate: "2026-10-27",
+    description: "Two supplier returns against one receipt line",
+    lines: [
+      {
+        id: randomUUID(),
+        sourceLineId: sourceReceipt.receipt.lines[0]!.id,
+        quantity: "60",
+      },
+      {
+        id: randomUUID(),
+        sourceLineId: sourceReceipt.receipt.lines[0]!.id,
+        quantity: "60",
+      },
+    ],
+  });
+  await expectRejected(finalize(supplierReturn), "DUPLICATE_SOURCE_LINE");
+  assert.deepEqual(pickBalance(await balance(ids.projects[0]!, materialId)), {
+    quantity: "200.000",
+    carryingValueToman: "2000",
+  });
+
+  const validReceipt = await draft({
+    kind: "STOCK_RECEIPT",
+    projectId: ids.projects[0]!,
+    supplierId: ids.suppliers[0]!,
+    invoiceId: invoice.id,
+    businessDate: "2026-10-24",
+    description: "Valid receipt for return regression",
+    lines: [{ id: randomUUID(), invoiceLineId: invoice.lines[0]!.id, quantity: "100" }],
+  });
+  await finalize(validReceipt);
+  const issue = await draft({
+    kind: "STOCK_ISSUE",
+    projectId: ids.projects[0]!,
+    businessDate: "2026-10-25",
+    description: "Issue for duplicate consumption return regression",
+    lines: [line(materialId, "100")],
+  });
+  await finalize(issue);
+  const consumptionReturn = await draft({
+    kind: "STOCK_RETURN",
+    projectId: ids.projects[0]!,
+    sourceDocumentId: issue.id,
+    businessDate: "2026-10-26",
+    description: "Two returns against one consumption line",
+    lines: [
+      { id: randomUUID(), sourceLineId: issue.lines[0]!.id, quantity: "60" },
+      { id: randomUUID(), sourceLineId: issue.lines[0]!.id, quantity: "60" },
+    ],
+  });
+  await expectRejected(finalize(consumptionReturn), "DUPLICATE_SOURCE_LINE");
+  assert.deepEqual(pickBalance(await balance(ids.projects[0]!, materialId)), {
+    quantity: "200.000",
+    carryingValueToman: "2000",
+  });
+}
+
+async function verifyPartialReceiptValueConservation() {
+  const materialId = ids.materials[4]!;
+  const invoice = await draft({
+    kind: "PURCHASE_INVOICE",
+    projectId: ids.projects[1]!,
+    supplierId: ids.suppliers[1]!,
+    businessDate: "2026-10-28",
+    description: "One-toman partial delivery regression",
+    receiveAllNow: false,
+    lines: [line(materialId, "1", "1")],
+  });
+  await finalize(invoice);
+  for (const description of ["First half", "Final half"]) {
+    const receipt = await draft({
+      kind: "STOCK_RECEIPT",
+      projectId: ids.projects[1]!,
+      supplierId: ids.suppliers[1]!,
+      invoiceId: invoice.id,
+      businessDate: "2026-10-29",
+      description,
+      lines: [{ id: randomUUID(), invoiceLineId: invoice.lines[0]!.id, quantity: "0.5" }],
+    });
+    await finalize(receipt);
+  }
+  assert.deepEqual(pickBalance(await balance(ids.projects[1]!, materialId)), {
+    quantity: "1.000",
+    carryingValueToman: "1",
+  });
+}
+
+async function verifySupplierCreditConservation() {
+  const materialId = ids.materials[5]!;
+  const source = await invoiceAndReceipt(materialId, "1", "1");
+  const returns: LoadedDocument[] = [];
+  for (const description of ["First credit half", "Final credit half"]) {
+    const supplierReturn = await draft({
+      kind: "SUPPLIER_RETURN",
+      projectId: ids.projects[0]!,
+      supplierId: ids.suppliers[0]!,
+      sourceDocumentId: source.receipt.id,
+      businessDate: "2026-10-30",
+      description,
+      lines: [
+        {
+          id: randomUUID(),
+          sourceLineId: source.receipt.lines[0]!.id,
+          quantity: "0.5",
+        },
+      ],
+    });
+    await finalize(supplierReturn);
+    returns.push(supplierReturn);
+  }
+  let totalCredit = 0n;
+  for (const supplierReturn of returns) {
+    const [stored] = await db
+      .select()
+      .from(schema.procurementDocuments)
+      .where(eq(schema.procurementDocuments.id, supplierReturn.id));
+    totalCredit += BigInt(stored?.totalToman ?? "0");
+  }
+  assert.equal(totalCredit, 1n, "supplier credits must conserve the stored source-line value");
+  assert.deepEqual(pickBalance(await balance(ids.projects[0]!, materialId)), {
+    quantity: "0.000",
+    carryingValueToman: "0",
+  });
+}
+
+async function verifyFilteredReportsAndSeparatedBalances() {
+  const mixedInvoice = await draft({
+    kind: "PURCHASE_INVOICE",
+    projectId: ids.projects[0]!,
+    supplierId: ids.suppliers[0]!,
+    businessDate: "2026-11-01",
+    description: "Mixed-material report regression",
+    receiveAllNow: false,
+    lines: [line(ids.materials[0]!, "2", "50"), line(ids.materials[1]!, "3", "100")],
+  });
+  await finalize(mixedInvoice);
+  const unrelatedPayment = await draft({
+    kind: "SUPPLIER_PAYMENT",
+    projectId: ids.projects[1]!,
+    supplierId: ids.suppliers[1]!,
+    businessDate: "2026-11-01",
+    description: "Unrelated payment outside material sources",
+    amountToman: "100",
+    allocations: [],
+  });
+  await finalize(unrelatedPayment);
+
+  const materialReport = await service.report({
+    materialId: ids.materials[0]!,
+    from: "2026-11-01",
+    to: "2026-11-01",
+  });
+  assert.equal(materialReport.totals.procurementToman, "100");
+  assert.equal(materialReport.totals.paymentsToman, "0");
+  assert.equal(materialReport.totals.outstandingDebtToman, "100");
+  assert.equal(materialReport.totals.supplierAdvanceToman, "0");
+  assert.equal(materialReport.entries.length, 1);
+  assert.equal(materialReport.entries[0]?.id, mixedInvoice.id);
+  assert.deepEqual(
+    materialReport.entries[0]?.lines.map((item) => item.materialId),
+    [ids.materials[0]!],
+  );
+  assert.equal(materialReport.purchasesBySupplier[0]?.amountToman, "100");
+  assert.equal(materialReport.purchasesByMaterial[0]?.amountToman, "100");
+  assert.deepEqual(materialReport.drillDownIds, [mixedInvoice.id]);
+
+  const debtInvoice = await draft({
+    kind: "PURCHASE_INVOICE",
+    projectId: ids.projects[0]!,
+    supplierId: ids.suppliers[0]!,
+    businessDate: "2026-11-02",
+    description: "Supplier debt grouping regression",
+    receiveAllNow: false,
+    lines: [line(ids.materials[0]!, "1", "100")],
+  });
+  await finalize(debtInvoice);
+  const advancePayment = await draft({
+    kind: "SUPPLIER_PAYMENT",
+    projectId: ids.projects[1]!,
+    supplierId: ids.suppliers[1]!,
+    businessDate: "2026-11-02",
+    description: "Supplier advance grouping regression",
+    amountToman: "100",
+    allocations: [],
+  });
+  await finalize(advancePayment);
+  const groupedReport = await service.report({ from: "2026-11-02", to: "2026-11-02" });
+  assert.equal(groupedReport.totals.procurementToman, "100");
+  assert.equal(groupedReport.totals.paymentsToman, "100");
+  assert.equal(groupedReport.totals.outstandingDebtToman, "100");
+  assert.equal(groupedReport.totals.supplierAdvanceToman, "100");
+}
+
 function pickBalance(row: { quantity: string; carryingValueToman: string }) {
   return { quantity: row.quantity, carryingValueToman: row.carryingValueToman };
 }
@@ -484,8 +714,12 @@ try {
   await verifyStockAndValuation();
   await verifyConcurrencyAndReplay();
   await verifyPartialDeliveryAndFinance();
+  await verifyDuplicateReceiptReferences();
+  await verifyPartialReceiptValueConservation();
+  await verifySupplierCreditConservation();
+  await verifyFilteredReportsAndSeparatedBalances();
   console.log(
-    "M3 verification passed: STOCK01-05, FIN01, replay/conflict, duplicate finalization, partial delivery, COR02, concurrency, and rounding.",
+    "M3 verification passed: STOCK01-05, FIN01, replay/conflict, duplicate finalization and source rejection, partial-value conservation, filtered reports, COR02, concurrency, and rounding.",
   );
 } finally {
   await cleanup();

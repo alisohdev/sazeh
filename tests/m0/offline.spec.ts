@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { openAccountPage, openFixtureProjectDossier } from "../helpers/project-dossier";
 
 const apiRequire = createRequire(resolve(process.cwd(), "apps/api/package.json"));
 const { DraftCreateCommandSchema } = apiRequire("@sazeh/contracts");
@@ -38,19 +39,21 @@ test("authenticated offline drafts survive session expiry, sync once across tabs
   await page.getByLabel("نام کاربری").fill(username);
   await page.getByLabel("گذرواژه", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(page);
   await expect(page.locator("main")).toHaveAttribute("dir", "rtl");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
 
-  await page.getByRole("button", { name: "مدیریت حساب‌های مدیران" }).click();
+  await openAccountPage(page);
+  await page.getByRole("button", { name: "مدیریت حساب‌ها", exact: true }).click();
   await expect(page.getByText(alternateUsername, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "بستن مدیریت حساب‌ها" }).click();
+  await page.getByRole("button", { name: "بستن", exact: true }).click();
+  await openFixtureProjectDossier(page);
 
   const peer = await context.newPage();
   await peer.goto("/");
-  await expect(peer.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(peer);
 
   const posts = new Map<string, number>();
   context.on("request", (request) => {
@@ -63,9 +66,9 @@ test("authenticated offline drafts survive session expiry, sync once across tabs
   await context.setOffline(true);
   await saveOfflineDraft(page, syncedMarker);
   await page.reload();
-  await expect(page.getByText(syncedMarker)).toBeVisible();
+  await expect(noteWithText(page, syncedMarker)).toBeVisible();
   await peer.reload();
-  await expect(peer.getByText(syncedMarker)).toBeVisible();
+  await expect(noteWithText(peer, syncedMarker)).toBeVisible();
 
   await context.setOffline(false);
   await Promise.all([
@@ -81,21 +84,22 @@ test("authenticated offline drafts survive session expiry, sync once across tabs
   await context.setOffline(true);
   await saveOfflineDraft(page, pendingMarker);
   await page.reload();
-  await expect(page.getByText(pendingMarker)).toBeVisible();
+  await expect(noteWithText(page, pendingMarker)).toBeVisible();
   await peer.reload();
-  await expect(peer.getByText(pendingMarker)).toBeVisible();
+  await expect(noteWithText(peer, pendingMarker)).toBeVisible();
   await expireFixtureSessions(userId);
 
   await context.setOffline(false);
   await expect(
     page.getByText("اتصال برقرار شد؛ برای ادامهٔ همگام‌سازی دوباره وارد شوید."),
   ).toBeVisible();
-  await page.getByRole("button", { name: "تلاش دوباره برای همگام‌سازی" }).click();
-  await expect(page.getByText("ورود دوباره لازم است")).toBeVisible();
+  await page.getByRole("button", { name: "همگام‌سازی", exact: true }).click();
+  await expect(page.getByText("ورود دوباره لازم است", { exact: true })).toBeVisible();
   expect(posts.get(pendingMarker) ?? 0).toBe(0);
 
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "خروج / تغییر حساب" }).click();
+  await openAccountPage(page);
+  await page.getByRole("button", { name: "خروج از حساب", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.reload();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -117,10 +121,11 @@ test("authenticated offline drafts survive session expiry, sync once across tabs
   await page.getByLabel("نام کاربری").fill(alternateUsername);
   await page.getByLabel("گذرواژه", { exact: true }).fill(newPassword);
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByLabel("متن یادداشت")).toBeVisible();
-  await expect(page.getByText(syncedMarker)).toHaveCount(0);
-  await expect(page.getByText(pendingMarker)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "مدیریت حساب‌های مدیران" })).toHaveCount(0);
+  await openFixtureProjectDossier(page);
+  await expect(noteWithText(page, syncedMarker)).toHaveCount(0);
+  await expect(noteWithText(page, pendingMarker)).toHaveCount(0);
+  await openAccountPage(page);
+  await expect(page.getByRole("button", { name: "مدیریت حساب‌ها", exact: true })).toHaveCount(0);
   expect(posts.get(pendingMarker) ?? 0).toBe(0);
 });
 
@@ -144,16 +149,16 @@ test("authentication rejection pauses both queued drafts until the user signs in
   await page.getByLabel("نام کاربری").fill(username);
   await page.getByLabel("گذرواژه", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(page);
   const peer = await context.newPage();
   await peer.goto("/");
-  await expect(peer.getByLabel("متن یادداشت")).toBeVisible();
+  await openFixtureProjectDossier(peer);
   await context.setOffline(true);
   for (const marker of markers) {
     await page.getByLabel("متن یادداشت").fill(marker);
     await page.getByRole("button", { name: "ذخیرهٔ یادداشت" }).click();
-    await expect(page.getByText(marker)).toBeVisible();
-    await expect(peer.getByText(marker)).toBeVisible();
+    await expect(noteWithText(page, marker)).toBeVisible();
+    await expect(noteWithText(peer, marker)).toBeVisible();
   }
   await expireFixtureSessions(requiredEnv("M1A_TEST_USER_ID"));
   await context.setOffline(false);
@@ -163,12 +168,13 @@ test("authentication rejection pauses both queued drafts until the user signs in
   await expect(
     peer.getByText("اتصال برقرار شد؛ برای ادامهٔ همگام‌سازی دوباره وارد شوید."),
   ).toBeVisible();
-  await page.getByRole("button", { name: "تلاش دوباره برای همگام‌سازی" }).click();
-  await expect(page.getByText("ورود دوباره لازم است")).toBeVisible();
+  await page.getByRole("button", { name: "همگام‌سازی", exact: true }).click();
+  await expect(page.getByText("ورود دوباره لازم است", { exact: true })).toHaveCount(2);
   await expectNoSyncRequests(context);
   for (const marker of markers) expect(posts.get(marker) ?? 0).toBe(0);
 
-  await page.getByRole("button", { name: "خروج / تغییر حساب" }).click();
+  await openAccountPage(page);
+  await page.getByRole("button", { name: "خروج از حساب", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expectNoSyncRequests(context);
   const download = page.waitForEvent("download");
@@ -179,9 +185,10 @@ test("authentication rejection pauses both queued drafts until the user signs in
   await page.getByLabel("نام کاربری").fill(username);
   await page.getByLabel("گذرواژه", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByText("همگام شد", { exact: true })).toHaveCount(2);
+  await openFixtureProjectDossier(page);
   for (const marker of markers) {
-    await expect(page.getByText(marker)).toBeVisible();
+    await expect(noteWithText(page, marker)).toBeVisible();
+    await expect(noteItem(page, marker).getByText("همگام شد", { exact: true })).toBeVisible();
     expect(posts.get(marker)).toBe(1);
   }
 });
@@ -205,8 +212,16 @@ async function expectNoSyncRequests(context: BrowserContext): Promise<void> {
 async function saveOfflineDraft(page: Page, text: string): Promise<void> {
   await page.getByLabel("متن یادداشت").fill(text);
   await page.getByRole("button", { name: "ذخیرهٔ یادداشت" }).click();
-  await expect(page.getByText(text)).toBeVisible();
+  await expect(noteWithText(page, text)).toBeVisible();
   await expect(page.getByText("در صف ارسال")).toBeVisible();
+}
+
+function noteWithText(page: Page, text: string) {
+  return noteItem(page, text).getByText(text, { exact: true });
+}
+
+function noteItem(page: Page, text: string) {
+  return page.getByRole("listitem").filter({ hasText: text });
 }
 
 function requiredEnv(name: string): string {

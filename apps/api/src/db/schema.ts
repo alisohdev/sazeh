@@ -683,11 +683,28 @@ export const financeReceipts = pgTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.commandId] })],
 );
+export const attachmentTargets = pgTable(
+  "attachment_targets",
+  {
+    id: uuid("id").primaryKey(),
+    parentType: varchar("parent_type", { length: 16 }).notNull(),
+    financeId: uuid("finance_id").references(() => financeRecords.id),
+    workforceId: uuid("workforce_id").references(() => workforceRecords.id),
+    procurementId: uuid("procurement_id").references(() => procurementDocuments.id),
+    projectId: uuid("project_id").references(() => projects.id),
+  },
+  (t) => [
+    check(
+      "attachment_target_parent_check",
+      sql`num_nonnulls(${t.financeId},${t.workforceId},${t.procurementId},${t.projectId})=1 AND ((${t.parentType}='FINANCE' AND ${t.financeId} IS NOT NULL AND ${t.financeId}=${t.id}) OR (${t.parentType}='WORKFORCE' AND ${t.workforceId} IS NOT NULL AND ${t.workforceId}=${t.id}) OR (${t.parentType}='PROCUREMENT' AND ${t.procurementId} IS NOT NULL AND ${t.procurementId}=${t.id}) OR (${t.parentType}='PROJECT' AND ${t.projectId} IS NOT NULL AND ${t.projectId}=${t.id}))`,
+    ),
+  ],
+);
 export const attachments = pgTable("attachments", {
   id: uuid("id").primaryKey(),
   recordId: uuid("record_id")
     .notNull()
-    .references(() => financeRecords.id),
+    .references(() => attachmentTargets.id),
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),

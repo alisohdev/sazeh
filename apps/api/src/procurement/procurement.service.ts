@@ -1,3 +1,4 @@
+import { requireReadyEvidence } from "../attachments/pending-evidence.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   BadRequestException,
@@ -100,6 +101,7 @@ export class ProcurementService {
       const document = await this.lockDocument(tx, command.recordId);
       this.expectDraftVersion(document, command.expectedVersion);
       await this.requireActiveProject(tx, document.projectId);
+      await requireReadyEvidence(tx, document.id, command.acknowledgePendingEvidence);
       if (document.destinationProjectId)
         await this.requireActiveProject(tx, document.destinationProjectId);
       if (document.supplierId) await this.requireSupplier(tx, document.supplierId, true);

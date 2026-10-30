@@ -202,6 +202,105 @@ try {
   const storage = createS3Client(settings);
   for (const key of ["private/" + fileId, "ready/" + fileId])
     await storage.send(new DeleteObjectCommand({ Bucket: settings.bucket, Key: key }));
+  await attachmentsApi.ticket(
+    {
+      id: randomUUID(),
+      recordId: projectId,
+      parentType: "PROJECT",
+      filename: "contract.pdf",
+      mediaType: "application/pdf",
+      size: 5,
+    },
+    request,
+  );
+  const workerId = randomUUID(),
+    invoiceId = randomUUID(),
+    workerPaymentId = randomUUID();
+  await db.insert(schema.contacts).values({
+    id: workerId,
+    displayName: "Evidence worker and supplier",
+    isWorker: true,
+    isSupplier: true,
+    createdBy: userId,
+    updatedBy: userId,
+  });
+  await db.insert(schema.workforceRecords).values({
+    id: workerPaymentId,
+    projectId,
+    workerId,
+    kind: "WORKER_PAYMENT",
+    paymentKind: "PAYMENT",
+    amountToman: "10",
+    businessDate: "2026-10-01",
+    description: "Evidence worker payment",
+    createdBy: userId,
+    updatedBy: userId,
+  });
+  await db.insert(schema.procurementDocuments).values({
+    id: invoiceId,
+    projectId,
+    supplierId: workerId,
+    kind: "PURCHASE_INVOICE",
+    businessDate: "2026-10-01",
+    description: "Evidence purchase invoice",
+    createdBy: userId,
+    updatedBy: userId,
+  });
+  for (const [parentType, recordId] of [
+    ["PROJECT", projectId],
+    ["WORKFORCE", workerPaymentId],
+    ["PROCUREMENT", invoiceId],
+  ] as const) {
+    const id = randomUUID();
+    const input = {
+      id,
+      recordId,
+      parentType,
+      filename: "parent.png",
+      mediaType: "image/png",
+      size: bytes.length,
+    };
+    await assert.rejects(
+      attachmentsApi.ticket({ ...input, id: randomUUID() }, {
+        principal: { ...actor, sessionId: randomUUID() },
+      } as AuthenticatedRequest),
+    );
+    const grant = await attachmentsApi.ticket(input, request);
+    assert(grant.url);
+    assert(
+      (
+        await fetch(grant.url, {
+          method: "PUT",
+          headers: { "Content-Type": "image/png" },
+          body: bytes,
+        })
+      ).ok,
+    );
+    await attachmentsApi.complete(id, request);
+    await attachmentsApi.complete(id, request);
+    assert.equal((await attachmentsApi.list(recordId)).filter((f) => f.id === id).length, 1);
+    await assert.rejects(
+      attachmentsApi.ticket(
+        { ...input, parentType: parentType === "PROJECT" ? "WORKFORCE" : "PROJECT" },
+        request,
+      ),
+    );
+    for (const key of ["private/" + id, "ready/" + id])
+      await storage.send(new DeleteObjectCommand({ Bucket: settings.bucket, Key: key }));
+  }
+  await assert.rejects(
+    attachmentsApi.ticket(
+      {
+        id: randomUUID(),
+        recordId: randomUUID(),
+        parentType: "PROJECT",
+        filename: "missing.png",
+        mediaType: "image/png",
+        size: bytes.length,
+      },
+      request,
+    ),
+  );
   const reportService = new FinanceReportService(db);
   const report = await reportService.report({ projectId });
   assert.equal(report.contractValueToman, "120000000");
@@ -229,7 +328,45 @@ try {
     reason: "Synthetic correction",
   });
   await post(await draft("EXPENSE", "300000", null, "2026-09-01"));
+  const projectB = randomUUID();
+  await db
+    .insert(schema.projects)
+    .values({ id: projectB, name: "M4 second project", createdBy: userId, updatedBy: userId });
+  await db.insert(schema.projectBudgets).values({
+    id: randomUUID(),
+    projectId: projectB,
+    category: "transport",
+    amountToman: "9000000",
+    baselineToman: "9000000",
+    updatedBy: userId,
+  });
+  const secondId = randomUUID();
+  await service.save(actor, {
+    commandId: randomUUID(),
+    recordId: secondId,
+    expectedVersion: 0,
+    input: {
+      projectId: projectB,
+      contactId: null,
+      kind: "EXPENSE",
+      amountToman: "700",
+      businessDate: "2026-10-01",
+      category: "transport",
+      description: "Second project",
+      sourceId: null,
+      direction: "INCREASE",
+    },
+  });
+  await post(secondId);
+  const company = await reportService.report({});
+  const budgetB = company.budgets.find((b) => b.projectId === projectB)!;
+  assert.equal(budgetB.costToman, "700", "same-category costs must stay in their project");
   const multiMonth = await reportService.report({ projectId });
+  assert.equal(
+    company.budgets.find((b) => b.projectId === projectId)!.costToman,
+    multiMonth.totals.incurredCostToman,
+    "project A must not receive project B cost",
+  );
   assert(multiMonth.months.length >= 4);
   assert(BigInt(multiMonth.budgets[0]!.varianceToman) < 0n);
   for (const [key, value] of Object.entries(multiMonth.totals))
@@ -260,12 +397,16 @@ try {
 } finally {
   await sql.begin(async (tx) => {
     await tx`delete from attachments where created_by=${userId}`;
-    await tx`delete from finance_records where project_id=${projectId}`;
+    await tx`delete from attachment_targets where finance_id in (select id from finance_records where created_by=${userId}) or project_id in (select id from projects where created_by=${userId}) or workforce_id in (select id from workforce_records where created_by=${userId}) or procurement_id in (select id from procurement_documents where created_by=${userId})`;
+    await tx`delete from workforce_records where created_by=${userId}`;
+    await tx`delete from procurement_documents where created_by=${userId}`;
+    await tx`delete from contacts where created_by=${userId}`;
+    await tx`delete from finance_records where project_id in (select id from projects where created_by=${userId})`;
     await tx`delete from finance_command_receipts where user_id=${userId}`;
     await tx`delete from business_audit where actor_user_id=${userId}`;
     await tx`delete from sync_changes where actor_user_id=${userId}`;
-    await tx`delete from project_budgets where project_id=${projectId}`;
-    await tx`delete from projects where id=${projectId}`;
+    await tx`delete from project_budgets where project_id in (select id from projects where created_by=${userId})`;
+    await tx`delete from projects where created_by=${userId}`;
     await tx`delete from sessions where id=${sessionId}`;
     await tx`delete from users where id=${userId}`;
   });

@@ -1,3 +1,4 @@
+import { PersianDatePicker } from "@/components/persian-date-picker";
 import { useMutation } from "@tanstack/react-query";
 import type { DraftWorkspace } from "@/drafts/draft-repository";
 import type { FinanceRow } from "./repository";
@@ -21,7 +22,7 @@ export function FinanceDraftEditor({
         kind: row.kind,
         contactId: row.contactId,
         sourceId: row.sourceId,
-        businessDate: row.businessDate,
+        businessDate: String(form.get("editDate") ?? row.businessDate),
         direction: row.direction,
         amountToman: normalizeDigits(String(form.get("amount"))).replaceAll(",", ""),
         description: String(form.get("description")),
@@ -51,6 +52,15 @@ export function FinanceDraftEditor({
         <label>
           دسته
           <Input name="category" defaultValue={row.category} required maxLength={120} />
+        </label>
+        <label>
+          تاریخ
+          <PersianDatePicker
+            id={"edit-date-" + row.id}
+            name="editDate"
+            defaultValue={row.businessDate}
+            required
+          />
         </label>
         {mutation.error && <p role="alert">{mutation.error.message}</p>}
         <Button disabled={mutation.isPending}>ذخیره ویرایش روی دستگاه</Button>

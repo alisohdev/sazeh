@@ -1,3 +1,4 @@
+import { RecordEvidence } from "@/finance/RecordEvidence";
 import { FinancePanel } from "@/finance/FinancePanel";
 import type { DraftView } from "@sazeh/contracts";
 import { useEffect } from "react";
@@ -113,6 +114,7 @@ export function ProjectDetailPage({
         </div>
 
         <aside className="grid content-start gap-4">
+          <RecordEvidence recordId={project.id} parentType="PROJECT" />
           <FinancePanel
             contacts={data.contacts}
             repository={repository}

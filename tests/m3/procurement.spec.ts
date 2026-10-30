@@ -49,6 +49,17 @@ test("mobile procurement draft survives offline, replays immutably, and finalize
   await page.getByRole("tab", { name: "گزارش و تحلیل" }).click();
   await expect(page.getByText(description)).toBeVisible();
   await expect(page.getByText("PENDING")).toBeVisible();
+  await page
+    .locator('[data-evidence-type="PROCUREMENT"] input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: "invoice-evidence.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("89504e470d0a1a0a00000000", "hex"),
+    });
+  await page.reload();
+  await page.getByRole("tab", { name: "گزارش و تحلیل" }).click();
+  await expect(page.getByText("invoice-evidence.png: در صف بارگذاری")).toBeVisible();
   await page.screenshot({
     path: resolve(screenshotDirectory, "m3-mobile-offline-invoice-draft.png"),
     fullPage: true,
@@ -74,6 +85,9 @@ test("mobile procurement draft survives offline, replays immutably, and finalize
   await expect.poll(() => submitted.length, { timeout: 45_000 }).toBeGreaterThanOrEqual(2);
   expect(submitted[1]).toEqual(submitted[0]);
 
+  await expect(page.getByText("invoice-evidence.png — آماده").first()).toBeVisible({
+    timeout: 45000,
+  });
   const finalizeButton = page.getByRole("button", { name: "ثبت نهایی آنلاین" });
   await expect(finalizeButton).toBeEnabled({ timeout: 45_000 });
   const finalization = page.waitForResponse(

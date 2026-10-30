@@ -14,7 +14,16 @@ test("FIN02 mobile expense draft survives offline and posts separate partial pay
   await page.goto("/");
   await page.locator("#username").fill(process.env.M1A_TEST_USERNAME!);
   await page.locator("#password").fill(process.env.M1A_TEST_PASSWORD!);
+  const feed = page.waitForResponse(
+    (response) => response.url().includes("/api/v1/sync/changes?") && response.ok(),
+    { timeout: 45000 },
+  );
+  const bootstrap = page.waitForResponse(
+    (response) => response.url().includes("/api/v1/sync/bootstrap?") && response.ok(),
+  );
   await page.locator('button[type="submit"]').first().click();
+  await bootstrap;
+  await feed;
   await expect(page.locator("#username")).toHaveCount(0);
   await page.goto("/projects/" + process.env.M3_TEST_PROJECT_ID);
   await expect(page.locator("#finance-kind")).toBeVisible();
@@ -28,7 +37,7 @@ test("FIN02 mobile expense draft survives offline and posts separate partial pay
   await page.getByRole("button", { name: "ذخیره پیش‌نویس", exact: true }).click();
   await expect(page.getByText("پیش‌نویس روی دستگاه: 1")).toBeVisible();
   await page
-    .locator('input[type="file"]')
+    .locator('article input[type="file"]')
     .first()
     .setInputFiles({
       name: "synthetic.png",

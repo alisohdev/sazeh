@@ -2,6 +2,8 @@ import { writeFileSync } from "node:fs";
 import { z } from "zod";
 import {
   CombinedFinanceFilterSchema,
+  WorkforceFinalizeCommandSchema,
+  ProcurementFinalizeCommandSchema,
   FinanceDraftSchema,
   FinanceActionSchema,
   FinanceReverseSchema,
@@ -10,6 +12,8 @@ import {
 } from "@sazeh/contracts";
 const schemas = {
   FinanceFilter: CombinedFinanceFilterSchema,
+  WorkforceFinalize: WorkforceFinalizeCommandSchema,
+  ProcurementFinalize: ProcurementFinalizeCommandSchema,
   FinanceDraft: FinanceDraftSchema,
   FinanceAction: FinanceActionSchema,
   FinanceReversal: FinanceReverseSchema,

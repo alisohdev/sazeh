@@ -1,3 +1,4 @@
+import { RecordEvidence } from "@/finance/RecordEvidence";
 import { useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
@@ -61,6 +62,7 @@ export function WorkforceRecordCard({
   return (
     <Card size="sm" className="border-border/70">
       <CardContent className="grid gap-2">
+        <RecordEvidence recordId={record.id} parentType="WORKFORCE" />
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="font-medium">{kindLabel(record)}</p>

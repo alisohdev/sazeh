@@ -60,9 +60,14 @@ export const authClient = {
 
   async refresh(): Promise<SessionResponse> {
     if (refreshInFlight) return refreshInFlight;
+    let refreshOwner: { userId: string; epoch: number } | undefined;
     refreshInFlight = workspaceControl
       .withLifecycleLock(async (signal) => {
         const state = await workspaceControl.state();
+        if (state.phase === "active" && state.user)
+          refreshOwner = { userId: state.user.id, epoch: state.epoch };
+        if (state.syncAuthentication === "required")
+          throw new ApiError("Sign in again to resume synchronization.", 401, "AUTH_REQUIRED");
         if (state.phase === "departing" || state.phase === "logout-pending") {
           throw new ApiError(
             "Finish signing out before refreshing the session.",
@@ -81,8 +86,18 @@ export const authClient = {
         }
         return result;
       })
-      .catch((error: unknown) => {
-        if (error instanceof ApiError && error.status === 401) clearMemory();
+      .catch(async (error: unknown) => {
+        if (error instanceof ApiError && error.status === 401) {
+          clearMemory();
+          const state = await workspaceControl.state();
+          if (
+            state.phase === "active" &&
+            state.user &&
+            refreshOwner?.userId === state.user.id &&
+            refreshOwner.epoch === state.epoch
+          )
+            await workspaceControl.pauseSync(state.user.id, state.epoch);
+        }
         throw error;
       })
       .finally(() => {

@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input";
 export function EvidenceControl({
   repository,
   recordId,
+  parentType = "FINANCE",
 }: {
   repository: DraftWorkspace;
   recordId: string;
+  parentType?: "FINANCE" | "WORKFORCE" | "PROCUREMENT" | "PROJECT";
 }) {
   const client = useQueryClient();
   const key = ["evidence-local", repository.userId, recordId];
@@ -33,7 +35,7 @@ export function EvidenceControl({
       (await repository.financeOnlineAllowed()) ? repository.remoteEvidence(recordId) : [],
   });
   return (
-    <div className="grid gap-2">
+    <div className="grid min-w-0 w-full gap-2">
       <label>
         افزودن رسید / تصویر / PDF (تا ۱۰ مگابایت)
         <Input
@@ -43,7 +45,7 @@ export function EvidenceControl({
             const file = e.target.files?.[0];
             if (file)
               void repository
-                .saveEvidence(recordId, file)
+                .saveEvidence(recordId, file, parentType)
                 .then(() => client.invalidateQueries({ queryKey: key }));
           }}
         />

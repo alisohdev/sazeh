@@ -13,6 +13,7 @@ export function useWorkforce({ user, repository, filter, online }: Props) {
   const reportKey = ["workforce-report", user.id, filter] as const;
   const loadLocal = useCallback(() => repository.workforceItems(), [repository]);
   const local = useQuery({
+    networkMode: "always",
     queryKey: localKey,
     queryFn: loadLocal,
     staleTime: Number.POSITIVE_INFINITY,

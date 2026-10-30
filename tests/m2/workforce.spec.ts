@@ -48,12 +48,21 @@ test("offline workforce draft survives refresh, replays a lost reply, and requir
   await workforce.locator('input[name="description"]').fill(originalDescription);
   await workforce.locator('form button[type="submit"]').click();
   await expect(workforce.locator('input[name="description"]')).toHaveValue(originalDescription);
+  await page
+    .locator('[data-evidence-type="WORKFORCE"] input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: "worker-evidence.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("89504e470d0a1a0a00000000", "hex"),
+    });
+  await expect(page.getByText("worker-evidence.png: در صف بارگذاری")).toBeVisible();
   await page.reload();
   await expect(page.getByText(originalDescription)).toBeVisible();
   await expect(page.getByText(/PENDING/)).toBeVisible();
 
   const localDraft = page.getByText(originalDescription).locator("..").locator("..");
-  await localDraft.getByRole("button").click();
+  await localDraft.getByRole("button", { name: "ویرایش", exact: true }).click();
   await workforce.locator('input[name="description"]').fill(revisedDescription);
   await workforce.locator('form button[type="submit"]').click();
   await page.reload();
@@ -96,6 +105,9 @@ test("offline workforce draft survives refresh, replays a lost reply, and requir
     rateToman: "1000000",
   });
 
+  await expect(page.getByText("worker-evidence.png — آماده").first()).toBeVisible({
+    timeout: 45000,
+  });
   const statement = page.locator('section[aria-label="ریز گردش حساب"]');
   const finalize = statement.getByRole("button").last();
   await expect(finalize).toBeEnabled({ timeout: 45_000 });
@@ -246,7 +258,7 @@ test("failed workforce upload preserves an edit made while the request is pendin
   await heldRequest;
 
   const localDraft = page.getByText(initialDescription).locator("..").locator("..");
-  await localDraft.getByRole("button").click();
+  await localDraft.getByRole("button", { name: "ویرایش", exact: true }).click();
   await workforce.locator('input[name="description"]').fill(latestDescription);
   await workforce.locator('form button[type="submit"]').click();
   await expect(page.getByText(latestDescription)).toBeVisible();

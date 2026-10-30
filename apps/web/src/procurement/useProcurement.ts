@@ -12,6 +12,7 @@ export function useProcurement({ user, repository, filter, online }: Props) {
   const localKey = useMemo(() => ["procurement-local", user.id] as const, [user.id]);
   const reportKey = ["procurement-report", user.id, filter] as const;
   const local = useQuery({
+    networkMode: "always",
     queryKey: localKey,
     queryFn: () => repository.procurementItems(),
     staleTime: Number.POSITIVE_INFINITY,

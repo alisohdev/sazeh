@@ -197,6 +197,7 @@ components:
       properties:
         commandId: { type: string, format: uuid }
         expectedVersion: { type: integer, minimum: 1 }
+        acknowledgePendingEvidence: { type: boolean, description: Explicit acknowledgment that queued evidence remains pending }
     BatchResult:
       type: object
       required: [results]

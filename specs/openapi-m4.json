@@ -440,6 +440,66 @@
         },
         "additionalProperties": false
       },
+      "WorkforceFinalize": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "acknowledgePendingEvidence": {
+            "type": "boolean"
+          },
+          "commandId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "commandId",
+          "recordId",
+          "expectedVersion"
+        ],
+        "additionalProperties": false
+      },
+      "ProcurementFinalize": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "acknowledgePendingEvidence": {
+            "type": "boolean"
+          },
+          "commandId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "commandId",
+          "recordId",
+          "expectedVersion"
+        ],
+        "additionalProperties": false
+      },
       "FinanceDraft": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -664,6 +724,16 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "parentType": {
+            "default": "FINANCE",
+            "type": "string",
+            "enum": [
+              "FINANCE",
+              "WORKFORCE",
+              "PROCUREMENT",
+              "PROJECT"
+            ]
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -695,6 +765,7 @@
           }
         },
         "required": [
+          "parentType",
           "id",
           "recordId",
           "filename",

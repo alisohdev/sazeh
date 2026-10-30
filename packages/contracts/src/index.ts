@@ -326,6 +326,7 @@ export const WorkforceDraftCommandSchema = z
   .strict();
 export const WorkforceFinalizeCommandSchema = z
   .object({
+    acknowledgePendingEvidence: z.boolean().optional(),
     commandId: UuidSchema,
     recordId: UuidSchema,
     expectedVersion: z.number().int().positive(),
@@ -498,6 +499,7 @@ export const ProcurementSyncCommandSchema = z.discriminatedUnion("commandType", 
 ]);
 export const ProcurementFinalizeCommandSchema = z
   .object({
+    acknowledgePendingEvidence: z.boolean().optional(),
     commandId: UuidSchema,
     recordId: UuidSchema,
     expectedVersion: z.number().int().positive(),
@@ -593,6 +595,7 @@ export const FinanceDecisionSchema = FinanceActionSchema.extend({
 
 export const AttachmentTicketSchema = z
   .object({
+    parentType: z.enum(["FINANCE", "WORKFORCE", "PROCUREMENT", "PROJECT"]).default("FINANCE"),
     id: z.uuid(),
     recordId: z.uuid(),
     filename: z.string().trim().min(1).max(200),

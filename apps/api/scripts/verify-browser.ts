@@ -416,7 +416,18 @@ async function main(): Promise<void> {
       await tx.delete(businessAudit).where(inArray(businessAudit.actorUserId, ids));
       await tx.delete(syncChanges).where(inArray(syncChanges.actorUserId, ids));
       await tx.delete(directoryReceipts).where(inArray(directoryReceipts.userId, ids));
+      const evidenceTargets = await tx
+        .select({ id: schema.attachments.recordId })
+        .from(schema.attachments)
+        .where(inArray(schema.attachments.createdBy, ids));
       await tx.delete(schema.attachments).where(inArray(schema.attachments.createdBy, ids));
+      if (evidenceTargets.length)
+        await tx.delete(schema.attachmentTargets).where(
+          inArray(
+            schema.attachmentTargets.id,
+            evidenceTargets.map((t) => t.id),
+          ),
+        );
       await tx.delete(schema.financeRecords).where(inArray(schema.financeRecords.createdBy, ids));
       await tx.delete(schema.financeReceipts).where(inArray(schema.financeReceipts.userId, ids));
       await tx.delete(workforceReceipts).where(inArray(workforceReceipts.userId, ids));

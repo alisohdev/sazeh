@@ -235,13 +235,13 @@ export class FinanceReportService {
             ...b,
             costToman: String(
               entries
-                .filter((r) => r.category === b.category)
+                .filter((r) => r.projectId === b.projectId && r.category === b.category)
                 .reduce((n, r) => n + BigInt(r.cost), 0n),
             ),
             varianceToman: String(
               BigInt(b.amountToman) -
                 entries
-                  .filter((r) => r.category === b.category)
+                  .filter((r) => r.projectId === b.projectId && r.category === b.category)
                   .reduce((n, r) => n + BigInt(r.cost), 0n),
             ),
           })),

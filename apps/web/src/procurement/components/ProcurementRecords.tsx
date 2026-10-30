@@ -1,3 +1,4 @@
+import { RecordEvidence } from "@/finance/RecordEvidence";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -58,6 +59,7 @@ export function ProcurementRecords({
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
+            <RecordEvidence recordId={record.id} parentType="PROCUREMENT" />
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={record.status === "DRAFT" ? "outline" : "secondary"}>
                 {record.status === "DRAFT"

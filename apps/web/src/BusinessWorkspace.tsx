@@ -1,3 +1,4 @@
+import { EvidenceRepository } from "./finance/RecordEvidence";
 import { FinanceDashboard } from "./finance/FinanceDashboard";
 import { useReducer } from "react";
 import type { User } from "@sazeh/contracts";
@@ -37,6 +38,13 @@ const emptyDirectory: WorkspaceDirectoryData = {
 };
 
 export function BusinessWorkspace(props: Props) {
+  return (
+    <EvidenceRepository.Provider value={props.repository}>
+      <BusinessWorkspaceContent {...props} />
+    </EvidenceRepository.Provider>
+  );
+}
+function BusinessWorkspaceContent(props: Props) {
   const { user, repository, locked, online, onStatus, page, notes } = props;
   const [view, dispatch] = useReducer(workspaceReducer, initialWorkspaceState);
   const navigate = useNavigate();

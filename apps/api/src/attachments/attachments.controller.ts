@@ -17,7 +17,15 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { DATABASE, type Database } from "../db/database.module.js";
-import { attachments, businessAudit, financeRecords } from "../db/schema.js";
+import {
+  attachmentTargets,
+  attachments,
+  businessAudit,
+  financeRecords,
+  workforceRecords,
+  procurementDocuments,
+  projects,
+} from "../db/schema.js";
 import type { AuthenticatedRequest } from "../identity/access.guard.js";
 import { claimsFor, requireLiveSession } from "../identity/identity.service.js";
 import { createS3Client, storageSettingsFromEnvironment } from "../storage/s3.js";
@@ -45,12 +53,44 @@ export class AttachmentsController {
     const actor = principal(req);
     const file = await this.db.transaction(async (tx) => {
       await requireLiveSession(tx, claimsFor(actor), false, "share");
+      const table =
+        input.parentType === "FINANCE"
+          ? financeRecords
+          : input.parentType === "WORKFORCE"
+            ? workforceRecords
+            : input.parentType === "PROCUREMENT"
+              ? procurementDocuments
+              : projects;
       const [parent] = await tx
         .select()
-        .from(financeRecords)
-        .where(eq(financeRecords.id, input.recordId))
+        .from(table)
+        .where(eq(table.id, input.recordId))
         .for("update");
-      if (!parent) throw new NotFoundException();
+      if (!parent) throw new NotFoundException("Attachment parent not found");
+      if (
+        ("reversalOfId" in parent && parent.reversalOfId) ||
+        ("status" in parent && parent.status === "REVERSED")
+      )
+        throw new ConflictException("Parent reversed");
+      if ("lifecycle" in parent && parent.lifecycle !== "ACTIVE")
+        throw new ConflictException("Project archived");
+      await tx
+        .insert(attachmentTargets)
+        .values({
+          id: input.recordId,
+          parentType: input.parentType,
+          financeId: input.parentType === "FINANCE" ? input.recordId : null,
+          workforceId: input.parentType === "WORKFORCE" ? input.recordId : null,
+          procurementId: input.parentType === "PROCUREMENT" ? input.recordId : null,
+          projectId: input.parentType === "PROJECT" ? input.recordId : null,
+        })
+        .onConflictDoNothing();
+      const [target] = await tx
+        .select()
+        .from(attachmentTargets)
+        .where(eq(attachmentTargets.id, input.recordId));
+      if (target?.parentType !== input.parentType)
+        throw new ConflictException("Parent type conflict");
       const [existing] = await tx.select().from(attachments).where(eq(attachments.id, input.id));
       if (existing) {
         if (
@@ -63,13 +103,19 @@ export class AttachmentsController {
           throw new ConflictException("Attachment identity conflict");
         return existing;
       }
-      if (parent.reversalOfId || parent.status === "REVERSED")
-        throw new ConflictException("Evidence must be queued before posting");
       const files = await tx.select().from(attachments).where(eq(attachments.recordId, parent.id));
       if (files.length >= 5) throw new ConflictException("Five files maximum");
       const [row] = await tx
         .insert(attachments)
-        .values({ ...input, createdBy: actor.userId, objectKey: "private/" + input.id })
+        .values({
+          id: input.id,
+          recordId: input.recordId,
+          filename: input.filename,
+          mediaType: input.mediaType,
+          size: input.size,
+          createdBy: actor.userId,
+          objectKey: "private/" + input.id,
+        })
         .returning();
       if (!row) throw new Error("Missing attachment");
       await tx.insert(businessAudit).values({

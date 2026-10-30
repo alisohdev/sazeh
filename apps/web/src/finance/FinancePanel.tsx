@@ -1,3 +1,4 @@
+import { FinanceLocalDraft } from "./FinanceLocalDraft";
 import { FinanceDraftEditor } from "./FinanceDraftEditor";
 import type { DirectoryRecord } from "@/business/types";
 import { FinanceEntryForm } from "./FinanceEntryForm";
@@ -62,11 +63,7 @@ export function FinancePanel({
         {local.data
           ?.filter((row) => row.payload.input.projectId === projectId)
           .map((row) => (
-            <article key={row.commandId} className="grid gap-2 border-t py-3">
-              <p>{row.payload.input.description} — پیش‌نویس روی دستگاه</p>
-              {row.problem && <p role="alert">{row.problem}</p>}
-              <EvidenceControl repository={repository} recordId={row.payload.recordId} />
-            </article>
+            <FinanceLocalDraft key={row.commandId} entry={row} repository={repository} />
           ))}
         {pendingActions.data
           ?.filter((a) => report.data?.entries.some((r) => r.id === a.recordId))

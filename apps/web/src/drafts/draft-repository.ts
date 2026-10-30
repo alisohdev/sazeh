@@ -158,6 +158,7 @@ class WorkspaceDatabase extends Dexie {
     {
       id: string;
       recordId: string;
+      parentType?: "FINANCE" | "WORKFORCE" | "PROCUREMENT" | "PROJECT";
       file: Blob;
       filename: string;
       mediaType: string;
@@ -187,7 +188,16 @@ class WorkspaceDatabase extends Dexie {
     "commandId"
   >;
   financeQueue!: EntityTable<
-    { commandId: string; payload: FinanceDraft; problem?: string },
+    {
+      commandId: string;
+      payload: FinanceDraft;
+      problem?: string;
+      attempted?: boolean;
+      editRevision?: number;
+      desired?: FinanceDraft["input"];
+      state?: "CONFLICT" | "VALIDATION_FAILED";
+      serverData?: Record<string, unknown>;
+    },
     "commandId"
   >;
   constructor(name: string) {
@@ -275,10 +285,35 @@ export function openDraftWorkspace(
   let closed = false;
 
   const unsubscribeControl = workspaceControl.subscribe(() => {
-    void canSync().then((allowed) => {
+    void canSync().then(async (allowed) => {
       if (!allowed) {
         cancelSyncWakeup();
         activeRun?.abort(new Error("Workspace synchronization paused"));
+        const state = await workspaceControl.state();
+        if (
+          !closed &&
+          state.phase === "active" &&
+          state.user?.id === user.id &&
+          state.epoch === epoch &&
+          state.syncAuthentication === "required"
+        ) {
+          const store = await db();
+          await store.transaction("rw", store.drafts, store.outbox, async () => {
+            for (const entry of await store.outbox.toArray()) {
+              const draft = await store.drafts.get(entry.entityId);
+              if (
+                draft &&
+                draft.syncState !== "CONFLICT" &&
+                draft.syncState !== "VALIDATION_FAILED"
+              )
+                await store.drafts.update(draft.id, {
+                  syncState: "AUTH_REQUIRED",
+                  problem: "برای ادامهٔ همگام‌سازی دوباره وارد شوید.",
+                });
+            }
+          });
+          notify();
+        }
       } else {
         void scheduleSyncWakeup();
       }
@@ -313,6 +348,14 @@ export function openDraftWorkspace(
     void scheduleSyncWakeup();
   }
 
+  async function confirmPendingEvidence(id: string) {
+    const local = (await repository.evidenceItems()).some((f) => f.recordId === id);
+    const remote = await repository.remoteEvidence(id);
+    const pending = local || remote.some((f) => f.state !== "READY");
+    if (pending && !window.confirm("پیوست‌ها هنوز آماده نیستند. با حفظ صف پیوست قطعی شود؟"))
+      throw new Error("Finalization cancelled; evidence retained");
+    return pending;
+  }
   async function queueWorkforceAction(
     id: string,
     action: "FINALIZE" | "REVERSE",
@@ -332,10 +375,17 @@ export function openDraftWorkspace(
         throw new Error("Only a synchronized server draft can be finalized online.");
       if (action === "REVERSE" && current.status !== "FINALIZED")
         throw new Error("Only a finalized workforce record can be reversed.");
+      const acknowledgePendingEvidence =
+        action === "FINALIZE" ? await confirmPendingEvidence(id) : false;
       const commandId = crypto.randomUUID();
       const payload =
         action === "FINALIZE"
-          ? WorkforceFinalizeCommandSchema.parse({ commandId, recordId: id, expectedVersion })
+          ? WorkforceFinalizeCommandSchema.parse({
+              commandId,
+              recordId: id,
+              expectedVersion,
+              acknowledgePendingEvidence,
+            })
           : WorkforceReverseCommandSchema.parse({
               commandId,
               recordId: id,
@@ -383,10 +433,17 @@ export function openDraftWorkspace(
         throw new Error("Only a synchronized server draft can be finalized online.");
       if (action === "REVERSE" && current.status !== "FINALIZED")
         throw new Error("Only a finalized procurement record can be reversed.");
+      const acknowledgePendingEvidence =
+        action === "FINALIZE" ? await confirmPendingEvidence(id) : false;
       const commandId = crypto.randomUUID();
       const payload =
         action === "FINALIZE"
-          ? ProcurementFinalizeCommandSchema.parse({ commandId, recordId: id, expectedVersion })
+          ? ProcurementFinalizeCommandSchema.parse({
+              commandId,
+              recordId: id,
+              expectedVersion,
+              acknowledgePendingEvidence,
+            })
           : ProcurementReverseCommandSchema.parse({
               commandId,
               recordId: id,
@@ -477,7 +534,11 @@ export function openDraftWorkspace(
       const store = await db();
       return store.evidenceQueue.toArray();
     },
-    async saveEvidence(recordId: string, file: File) {
+    async saveEvidence(
+      recordId: string,
+      file: File,
+      parentType: "FINANCE" | "WORKFORCE" | "PROCUREMENT" | "PROJECT" = "FINANCE",
+    ) {
       return withWorkspaceActivity("shared", async () => {
         await requireCurrent();
         if (
@@ -490,6 +551,7 @@ export function openDraftWorkspace(
         await store.evidenceQueue.add({
           id,
           recordId,
+          parentType,
           file,
           filename: file.name,
           mediaType: file.type,
@@ -536,6 +598,37 @@ export function openDraftWorkspace(
       const store = await db();
       return store.financeActions.toArray();
     },
+    async resolveFinance(commandId: string, choice: "SERVER" | "REVISE") {
+      return withWorkspaceActivity("shared", async () => {
+        await requireCurrent();
+        const store = await db();
+        await store.transaction("rw", store.financeQueue, async () => {
+          const entry = await store.financeQueue.get(commandId);
+          if (!entry?.state) throw new Error("No rejected command to resolve");
+          if (choice === "SERVER") {
+            await store.financeQueue.delete(commandId);
+            return;
+          }
+          const server = entry.serverData;
+          if (server && server.status !== "DRAFT")
+            throw new Error("Finalized server record cannot be overwritten");
+          const payload = FinanceDraftSchema.parse({
+            ...entry.payload,
+            commandId: crypto.randomUUID(),
+            expectedVersion: server?.version ?? entry.payload.expectedVersion,
+            input: entry.desired ?? entry.payload.input,
+          });
+          await store.financeQueue.delete(commandId);
+          await store.financeQueue.add({
+            commandId: payload.commandId,
+            payload,
+            editRevision: (entry.editRevision ?? 1) + 1,
+          });
+        });
+        notify();
+        if (navigator.onLine) void repository.syncPending();
+      });
+    },
     async financeItems() {
       const store = await db();
       return store.financeQueue.toArray();
@@ -554,7 +647,24 @@ export function openDraftWorkspace(
           expectedVersion,
           input,
         });
-        await store.financeQueue.add({ commandId: payload.commandId, payload });
+        await store.transaction("rw", store.financeQueue, async () => {
+          const previous = (await store.financeQueue.toArray()).find(
+            (e) => e.payload.recordId === recordId,
+          );
+          if (previous && (previous.attempted || previous.editRevision === undefined)) {
+            await store.financeQueue.update(previous.commandId, {
+              desired: input,
+              editRevision: (previous.editRevision ?? 1) + 1,
+            });
+          } else {
+            if (previous) await store.financeQueue.delete(previous.commandId);
+            await store.financeQueue.add({
+              commandId: payload.commandId,
+              payload,
+              editRevision: (previous?.editRevision ?? 0) + 1,
+            });
+          }
+        });
         notify();
         if (navigator.onLine) void repository.syncPending();
         return payload.recordId;
@@ -1110,7 +1220,10 @@ export function openDraftWorkspace(
           (await store.outbox.count()) +
             (await store.directoryOutbox.count()) +
             (await store.workforceOutbox.count()) +
-            (await store.procurementOutbox.count()),
+            (await store.procurementOutbox.count()) +
+            (await store.financeQueue.count()) +
+            (await store.financeActions.count()) +
+            (await store.evidenceQueue.count()),
         );
       });
     },
@@ -1257,6 +1370,30 @@ export function openDraftWorkspace(
     },
   };
 
+  async function pauseFinancialAuthentication(error: unknown) {
+    if (
+      error instanceof ApiError &&
+      (error.status === 401 || (error.status === 403 && isAuthenticationCode(error.code)))
+    ) {
+      await workspaceControl.pauseSync(user.id, epoch);
+      onAuthentication?.(error.code);
+      notify();
+      return true;
+    }
+    return false;
+  }
+  async function financialResponse(response: Response) {
+    if (response.status === 401 || response.status === 403) {
+      const problem = (await response
+        .clone()
+        .json()
+        .catch(() => undefined)) as { code?: string } | undefined;
+      const code = problem?.code ?? (response.status === 401 ? "AUTH_REQUIRED" : "");
+      if (response.status === 401 || isAuthenticationCode(code))
+        throw new ApiError("Sign in again to synchronize.", response.status, code);
+    }
+    return response;
+  }
   async function runEvidenceSync() {
     if (!(await canSync()) || !navigator.onLine) return;
     await withWorkspaceActivity("shared", async () => {
@@ -1264,6 +1401,7 @@ export function openDraftWorkspace(
       await navigator.locks.request("sazeh-evidence-" + user.id, async () => {
         const store = await db();
         for (const file of await store.evidenceQueue.toArray()) {
+          if (!(await canSync())) return;
           await requireCurrent();
           try {
             const ticket = await authClient.requestForUser(
@@ -1273,6 +1411,7 @@ export function openDraftWorkspace(
                 body: JSON.stringify({
                   id: file.id,
                   recordId: file.recordId,
+                  parentType: file.parentType ?? "FINANCE",
                   filename: file.filename,
                   mediaType: file.mediaType,
                   size: file.size,
@@ -1280,6 +1419,8 @@ export function openDraftWorkspace(
               },
               user.id,
             );
+            await financialResponse(ticket);
+            if (!(await canSync())) return;
             if (!ticket.ok) throw new Error("درخواست بارگذاری ناموفق: " + ticket.status);
             const data = (await ticket.json()) as { state: string; url?: string };
             await requireCurrent();
@@ -1297,12 +1438,15 @@ export function openDraftWorkspace(
                 { method: "POST", body: "{}" },
                 user.id,
               );
+              await financialResponse(complete);
+              if (!(await canSync())) return;
               if (!complete.ok) throw new Error("تأیید پرونده ناموفق");
             }
             await requireCurrent();
             await store.evidenceQueue.delete(file.id);
             notify();
           } catch (error) {
+            if (await pauseFinancialAuthentication(error)) return;
             await store.evidenceQueue.update(file.id, {
               problem: error instanceof Error ? error.message : "خطای پرونده",
             });
@@ -1313,14 +1457,23 @@ export function openDraftWorkspace(
     });
   }
   async function runFinanceSync() {
-    if (!navigator.onLine) return;
+    if (!(await canSync()) || !navigator.onLine) return;
     await withWorkspaceActivity("shared", async () => {
       await requireCurrent();
       await navigator.locks.request("sazeh-finance-" + user.id, async () => {
         const store = await db();
-        for (const entry of await store.financeQueue.toArray()) {
+        for (const queued of await store.financeQueue.toArray()) {
+          const entry = await store.transaction("rw", store.financeQueue, async () => {
+            const current = await store.financeQueue.get(queued.commandId);
+            if (!current || current.state) return undefined;
+            await store.financeQueue.update(current.commandId, { attempted: true });
+            return current;
+          });
+          if (!entry || entry.state) continue;
+          if (!(await canSync())) return;
           await requireCurrent();
           try {
+            await store.financeQueue.update(entry.commandId, { attempted: true });
             const response = await authClient.requestForUser(
               "/api/v1/finance/draft",
               {
@@ -1330,20 +1483,61 @@ export function openDraftWorkspace(
               },
               user.id,
             );
+            await financialResponse(response);
+            if (!(await canSync())) return;
             await requireCurrent();
             if (!response.ok) {
+              const error = (await response.json().catch(() => ({}))) as {
+                current?: Record<string, unknown>;
+                message?: string;
+              };
               await store.financeQueue.update(entry.commandId, {
-                problem: "همگام‌سازی ناموفق: " + response.status,
+                problem: error.message ?? "Finance sync failed: " + response.status,
+                ...(response.status === 409
+                  ? {
+                      state: "CONFLICT" as const,
+                      ...(error.current ? { serverData: error.current } : {}),
+                    }
+                  : response.status === 400
+                    ? { state: "VALIDATION_FAILED" as const }
+                    : {}),
               });
+              notify();
               continue;
             }
-            await store.financeQueue.delete(entry.commandId);
+            const result = (await response.json()) as {
+              result?: { version: number };
+              version?: number;
+            };
+            const version = result.result?.version ?? result.version;
+            if (!version) throw new Error("Missing financial acknowledgement version");
+            await store.transaction("rw", store.financeQueue, async () => {
+              const current = await store.financeQueue.get(entry.commandId);
+              if (!current) return;
+              await store.financeQueue.delete(entry.commandId);
+              if (current.desired) {
+                const payload = FinanceDraftSchema.parse({
+                  ...current.payload,
+                  commandId: crypto.randomUUID(),
+                  expectedVersion: version,
+                  input: current.desired,
+                });
+                await store.financeQueue.add({
+                  commandId: payload.commandId,
+                  payload,
+                  editRevision: current.editRevision ?? 1,
+                });
+                syncRequested = true;
+              }
+            });
             notify();
-          } catch {
+          } catch (error) {
+            if (await pauseFinancialAuthentication(error)) return;
             break;
           }
         }
         for (const entry of await store.financeActions.toArray()) {
+          if (!(await canSync())) return;
           await requireCurrent();
           try {
             const response = await authClient.requestForUser(
@@ -1351,6 +1545,8 @@ export function openDraftWorkspace(
               { method: "POST", body: JSON.stringify(entry.payload) },
               user.id,
             );
+            await financialResponse(response);
+            if (!(await canSync())) return;
             await requireCurrent();
             if (response.ok) await store.financeActions.delete(entry.commandId);
             else
@@ -1358,7 +1554,8 @@ export function openDraftWorkspace(
                 problem: "Posting failed: " + response.status,
               });
             notify();
-          } catch {
+          } catch (error) {
+            if (await pauseFinancialAuthentication(error)) return;
             break;
           }
         }
@@ -2622,7 +2819,9 @@ export function openDraftWorkspace(
       const lease = await store.leases.get("sync");
       const leaseReadyAt = lease && lease.expiresAt > now ? lease.expiresAt : now;
       const financeRetry =
-        (await store.financeQueue.toArray()).some((e) => !e.problem || /50[0-9]/.test(e.problem)) ||
+        (await store.financeQueue.toArray()).some(
+          (e) => !e.state && (!e.problem || /50[0-9]/.test(e.problem)),
+        ) ||
         (await store.financeActions.toArray()).some(
           (e) => !e.problem || /50[0-9]/.test(e.problem),
         ) ||

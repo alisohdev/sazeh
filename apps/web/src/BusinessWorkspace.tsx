@@ -1,3 +1,5 @@
+import { EvidenceRepository } from "./finance/RecordEvidence";
+import { FinanceDashboard } from "./finance/FinanceDashboard";
 import { useReducer } from "react";
 import type { User } from "@sazeh/contracts";
 import { useNavigate, useParams } from "react-router-dom";
@@ -36,6 +38,13 @@ const emptyDirectory: WorkspaceDirectoryData = {
 };
 
 export function BusinessWorkspace(props: Props) {
+  return (
+    <EvidenceRepository.Provider value={props.repository}>
+      <BusinessWorkspaceContent {...props} />
+    </EvidenceRepository.Provider>
+  );
+}
+function BusinessWorkspaceContent(props: Props) {
   const { user, repository, locked, online, onStatus, page, notes } = props;
   const [view, dispatch] = useReducer(workspaceReducer, initialWorkspaceState);
   const navigate = useNavigate();
@@ -62,6 +71,7 @@ export function BusinessWorkspace(props: Props) {
   if (page === "project") {
     return (
       <ProjectDetailPage
+        userId={user.id}
         project={data.projects.find((row) => row.id === projectId)}
         data={data}
         notes={notes}
@@ -110,6 +120,14 @@ export function BusinessWorkspace(props: Props) {
         locked={locked}
         onSync={() => void directory.syncAgain()}
       />
+      {page === "projects" && (
+        <FinanceDashboard
+          repository={repository}
+          userId={user.id}
+          projectId=""
+          online={online && !locked}
+        />
+      )}
       <BusinessTabs
         tab={page}
         filter={view.filter}

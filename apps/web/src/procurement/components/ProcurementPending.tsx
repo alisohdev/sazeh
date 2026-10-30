@@ -1,3 +1,4 @@
+import { RecordEvidence } from "@/finance/RecordEvidence";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -33,6 +34,7 @@ export function ProcurementPending({
               key={draft.id}
               className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 p-3"
             >
+              <RecordEvidence recordId={draft.id} parentType="PROCUREMENT" />
               <span className="min-w-0 flex-1 truncate">
                 {"description" in draft.data ? draft.data.description : "پیش‌نویس مصالح"}
               </span>

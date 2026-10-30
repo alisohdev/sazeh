@@ -219,6 +219,7 @@ export const DirectoryChangesSchema = z.object({
         "MATERIAL",
         "WORKFORCE_RECORD",
         "PROCUREMENT_DOCUMENT",
+        "FINANCE_RECORD",
       ]),
       entityId: UuidSchema,
       snapshot: z.record(z.string(), z.unknown()),
@@ -325,6 +326,7 @@ export const WorkforceDraftCommandSchema = z
   .strict();
 export const WorkforceFinalizeCommandSchema = z
   .object({
+    acknowledgePendingEvidence: z.boolean().optional(),
     commandId: UuidSchema,
     recordId: UuidSchema,
     expectedVersion: z.number().int().positive(),
@@ -497,6 +499,7 @@ export const ProcurementSyncCommandSchema = z.discriminatedUnion("commandType", 
 ]);
 export const ProcurementFinalizeCommandSchema = z
   .object({
+    acknowledgePendingEvidence: z.boolean().optional(),
     commandId: UuidSchema,
     recordId: UuidSchema,
     expectedVersion: z.number().int().positive(),
@@ -529,3 +532,87 @@ export const TemporaryCredentialSchema = z
     temporaryPassword: z.string().min(14),
   })
   .strict();
+
+export const FinanceInputSchema = z
+  .object({
+    projectId: z.uuid(),
+    contactId: z.uuid().nullable().default(null),
+    kind: z.enum([
+      "EXPENSE",
+      "EXPENSE_PAYMENT",
+      "CONTRACT_AMENDMENT",
+      "OWNER_CLAIM",
+      "OWNER_RECEIPT",
+    ]),
+    businessDate: DateOnlySchema,
+    amountToman: z.string().regex(/^[1-9][0-9]{0,23}$/),
+    description: z.string().trim().min(1).max(1000),
+    category: z.string().trim().min(1).max(120),
+    sourceId: z.uuid().nullable().default(null),
+    direction: z.enum(["INCREASE", "DECREASE"]).default("INCREASE"),
+  })
+  .strict()
+  .superRefine((v, c) => {
+    if ((v.kind === "EXPENSE_PAYMENT") !== Boolean(v.sourceId))
+      c.addIssue({
+        code: "custom",
+        message: "Expense payment requires source; other kinds cannot have source",
+      });
+    if (v.kind !== "CONTRACT_AMENDMENT" && v.direction !== "INCREASE")
+      c.addIssue({ code: "custom", message: "Only amendments can decrease" });
+  });
+export const FinanceDraftSchema = z
+  .object({
+    commandId: z.uuid(),
+    recordId: z.uuid(),
+    expectedVersion: z.int().min(0),
+    input: FinanceInputSchema,
+  })
+  .strict();
+export const FinanceActionSchema = z
+  .object({
+    commandId: z.uuid(),
+    recordId: z.uuid(),
+    expectedVersion: z.int().min(1),
+    acknowledgePendingEvidence: z.boolean().optional(),
+  })
+  .strict();
+export const FinanceReverseSchema = FinanceActionSchema.extend({
+  reason: z.string().trim().min(1).max(1000),
+});
+export const FinanceFilterSchema = z
+  .object({ projectId: z.uuid(), from: DateOnlySchema.optional(), to: DateOnlySchema.optional() })
+  .strict()
+  .refine((v) => !v.from || !v.to || v.from <= v.to, "Invalid range");
+export type FinanceDraft = z.infer<typeof FinanceDraftSchema>;
+export type FinanceAction = z.infer<typeof FinanceActionSchema>;
+export type FinanceReverse = z.infer<typeof FinanceReverseSchema>;
+
+export const FinanceDecisionSchema = FinanceActionSchema.extend({
+  approvedToman: z.string().regex(/^(0|[1-9][0-9]{0,23})$/),
+  note: z.string().trim().min(1).max(1000),
+});
+
+export const AttachmentTicketSchema = z
+  .object({
+    parentType: z.enum(["FINANCE", "WORKFORCE", "PROCUREMENT", "PROJECT"]).default("FINANCE"),
+    id: z.uuid(),
+    recordId: z.uuid(),
+    filename: z.string().trim().min(1).max(200),
+    mediaType: z.enum(["image/jpeg", "image/png", "image/webp", "application/pdf"]),
+    size: z
+      .int()
+      .min(1)
+      .max(10 * 1024 * 1024),
+  })
+  .strict();
+
+export const CombinedFinanceFilterSchema = z
+  .object({
+    projectId: z.uuid().optional(),
+    contactId: z.uuid().optional(),
+    from: DateOnlySchema.optional(),
+    to: DateOnlySchema.optional(),
+  })
+  .strict()
+  .refine((v) => !v.from || !v.to || v.from <= v.to, "Invalid range");

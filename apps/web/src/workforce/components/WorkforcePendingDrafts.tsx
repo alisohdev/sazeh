@@ -1,3 +1,4 @@
+import { RecordEvidence } from "@/finance/RecordEvidence";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import type { WorkforceRecordInput } from "@sazeh/contracts";
@@ -29,6 +30,7 @@ export function WorkforcePendingDrafts({ drafts, pendingServerCount, onEdit }: P
               className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-background p-3"
             >
               <div>
+                <RecordEvidence recordId={draft.id} parentType="WORKFORCE" />
                 <p className="font-medium">
                   {recordLabel(draft.data.kind)}، {draft.data.businessDate}
                 </p>

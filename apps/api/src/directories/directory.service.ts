@@ -22,6 +22,7 @@ import {
   directoryReceipts,
   engagements,
   materials,
+  financeRecords,
   projectBudgets,
   projects,
   syncChanges,
@@ -411,6 +412,18 @@ export class DirectoryService {
     if (kind === "PROJECT_UPDATE") {
       const value = ProjectInputSchema.parse(input);
       const current = await this.currentProject(tx, id, expectedVersion);
+      if (value.contractInitialToman !== current.contractInitialToman) {
+        const [financial] = await tx
+          .select({ id: financeRecords.id })
+          .from(financeRecords)
+          .where(eq(financeRecords.projectId, id))
+          .limit(1);
+        if (financial)
+          throw new ConflictException({
+            code: "INITIAL_CONTRACT_LOCKED",
+            message: "Use a reasoned contract amendment",
+          });
+      }
       if (value.ownerContactId && value.ownerContactId !== current.ownerContactId) {
         if (current.lifecycle !== "ACTIVE")
           throw new ConflictException({

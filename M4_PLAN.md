@@ -1,0 +1,22 @@
+# M4 implementation plan
+
+Baseline: M3 at `1d6ba71`. This plan follows PRD.md, DECISIONS.md, DELIVERY.md, adr/ADRS.md, and the domain, offline/security and acceptance specifications. M4 is complete only when the evidence below passes; no deployment or merge is included.
+
+## Sequence and verification
+
+1. **Contracts and persistence.** Define runtime-validated DTOs and OpenAPI schemas for expense, payment, amendment, claim, decision, receipt and reversal. Add additive typed tables and constraints, preserving initial contract values and existing records. Reuse authenticated command receipts, version checks, transactional audit and change publication. Financial finalization and reversal stay explicit, online and idempotent; lock dependencies and reject conflicting concurrent operations.
+2. **Expenses.** Implement expense drafts, finalized incurred cost, independently posted partial payments and linked reasoned reversals. Reconcile expense payable and applicable supplier balances without counting allocations as cash or cost. Verify FIN02, payment retries, dependencies and concurrent posting.
+3. **Contracts and owners.** Preserve the initial value and signed, reasoned amendments. Track submitted claims separately from approved finalized revenue and receipts; permit visible owner advances. Verify FIN03–04, correction history, lost replies and concurrency.
+4. **Evidence.** Implement private object storage and authenticated, audited links with stable attachment identities, verified JPG/PNG/WebP/PDF type and size (10 MB, five per record by default). Extend account-scoped IndexedDB with durable blobs and retry states; synchronize the parent first, renew tickets, retain blobs until confirmed, fence account/lease changes and expose missing files and failures. Prompt before finalizing with pending evidence. Verify FILE01–02, interrupted uploads, account switching and recovery.
+5. **Reconciled reports.** Build a shared filtered server-side projection from finalized M2–M4 effects with linked reversals included once. Separate contract, approved revenue, receipts, labor net of deductions, consumption, other costs, stock value, supplier and worker balances, and cash. Include supplier-return valuation adjustments; exclude internal transfers from company cost and cash. Use exact decimal arithmetic and specified rounding. Provide opening/period/closing statements, source drill-down, safe CSV and print output with identical filters, plus separate pending drafts and last-sync information. Label management reporting and stock posting-order semantics clearly.
+6. **Frontend.** Compose focused components of at most 200 lines with repositories and query hooks, shadcn/ui and Tailwind semantic tokens. Deliver Persian RTL, Jalali dates, toman, accessible mobile capture, empty/error states and charts for monthly cost, budget variance, cash, claims/receipts and cost composition. Verify 360 px without page-wide overflow.
+7. **Acceptance and handoff.** Use realistic synthetic multi-month records including advances, partial payments, reversals and budget overruns. Test date boundaries, filtered exports and drill-down reconciliation, concurrent finalization, attachment authorization and offline recovery against PostgreSQL and the built browser. Retain and run the complete M1–M3 suite (`pnpm build`, `pnpm verify:m0` and relevant focused checks). Capture 360 px screenshots, sample dashboard/reconciliation and CSV/print output, security and recovery evidence. Record exact results and limitations in a draft PR; stop before merge or deployment.
+
+## Acceptance anchors
+
+- FIN02: 10,000 incurred, 4,000 paid yields 6,000 payable, without duplicating cost.
+- FIN03: 100m initial plus 20m amendment, 30m approved, 20m received and 18m incurred yields 120m contract, 10m receivable and 12m management margin.
+- FIN04: 40m received against 30m approved yields a 10m advance, not additional revenue.
+- Each statement reconciles opening balance plus period movements to closing; cards, charts, source rows and exports use the same applicable filters. Drafts never enter finalized totals.
+- An expense and an M3 purchase invoice are independent obligations. A shared supplier contact alone never creates or duplicates an expense liability.
+- Pending attachments trigger a warning and require explicit acknowledgment to proceed with finalization; the evidence remains queued and is not silently discarded.

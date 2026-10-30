@@ -1,3 +1,7 @@
+import { FinanceReportService } from "./finance/report.service.js";
+import { AttachmentsController } from "./attachments/attachments.controller.js";
+import { FinanceController } from "./finance/finance.controller.js";
+import { FinanceService } from "./finance/finance.service.js";
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "./db/database.module.js";
 import { DraftsController } from "./drafts/drafts.controller.js";
@@ -13,12 +17,20 @@ import { ProcurementService } from "./procurement/procurement.service.js";
 @Module({
   imports: [DatabaseModule, IdentityModule],
   controllers: [
+    AttachmentsController,
+    FinanceController,
     DraftsController,
     HealthController,
     DirectoriesController,
     WorkforceController,
     ProcurementController,
   ],
-  providers: [DirectoryService, WorkforceService, ProcurementService],
+  providers: [
+    FinanceReportService,
+    FinanceService,
+    DirectoryService,
+    WorkforceService,
+    ProcurementService,
+  ],
 })
 export class AppModule {}

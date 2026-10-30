@@ -617,3 +617,101 @@ export const accountAudit = pgTable("account_audit", {
   action: varchar("action", { length: 40 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const financeRecords = pgTable(
+  "finance_records",
+  {
+    supplierBilled: boolean("supplier_billed").notNull().default(false),
+    approvedToman: varchar("approved_toman", { length: 24 }),
+    decisionNote: text("decision_note"),
+    id: uuid("id").primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    contactId: uuid("contact_id").references(() => contacts.id),
+    kind: varchar("kind", { length: 24 }).notNull(),
+    businessDate: char("business_date", { length: 10 }).notNull(),
+    amountToman: varchar("amount_toman", { length: 24 }).notNull(),
+    description: text("description").notNull(),
+    category: varchar("category", { length: 120 }).notNull(),
+    sourceId: uuid("source_id").references((): AnyPgColumn => financeRecords.id),
+    direction: varchar("direction", { length: 12 }).notNull(),
+    status: varchar("status", { length: 12 }).notNull().default("DRAFT"),
+    version: integer("version").notNull().default(1),
+    reversalOfId: uuid("reversal_of_id").references((): AnyPgColumn => financeRecords.id),
+    reversalReason: text("reversal_reason"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => users.id),
+    finalizedBy: uuid("finalized_by").references(() => users.id),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("finance_reversal_uq").on(t.reversalOfId),
+    check(
+      "finance_kind_check",
+      sql`${t.kind} IN ('EXPENSE','EXPENSE_PAYMENT','CONTRACT_AMENDMENT','OWNER_CLAIM','OWNER_RECEIPT')`,
+    ),
+    check(
+      "finance_status_check",
+      sql`${t.status} IN ('DRAFT','SUBMITTED','REJECTED','FINALIZED','REVERSED')`,
+    ),
+    check("finance_source_check", sql`(${t.kind}='EXPENSE_PAYMENT') = (${t.sourceId} IS NOT NULL)`),
+    check(
+      "finance_reversal_reason_check",
+      sql`(${t.reversalOfId} IS NULL AND ${t.reversalReason} IS NULL) OR (${t.reversalOfId} IS NOT NULL AND length(btrim(${t.reversalReason})) BETWEEN 1 AND 1000)`,
+    ),
+    check("finance_amount_check", sql`${t.amountToman} ~ '^[1-9][0-9]{0,23}$'`),
+  ],
+);
+
+export const financeReceipts = pgTable(
+  "finance_command_receipts",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    commandId: uuid("command_id").notNull(),
+    bodyHash: char("body_hash", { length: 64 }).notNull(),
+    result: jsonb("result").$type<unknown>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.commandId] })],
+);
+export const attachmentTargets = pgTable(
+  "attachment_targets",
+  {
+    id: uuid("id").primaryKey(),
+    parentType: varchar("parent_type", { length: 16 }).notNull(),
+    financeId: uuid("finance_id").references(() => financeRecords.id),
+    workforceId: uuid("workforce_id").references(() => workforceRecords.id),
+    procurementId: uuid("procurement_id").references(() => procurementDocuments.id),
+    projectId: uuid("project_id").references(() => projects.id),
+  },
+  (t) => [
+    check(
+      "attachment_target_parent_check",
+      sql`num_nonnulls(${t.financeId},${t.workforceId},${t.procurementId},${t.projectId})=1 AND ((${t.parentType}='FINANCE' AND ${t.financeId} IS NOT NULL AND ${t.financeId}=${t.id}) OR (${t.parentType}='WORKFORCE' AND ${t.workforceId} IS NOT NULL AND ${t.workforceId}=${t.id}) OR (${t.parentType}='PROCUREMENT' AND ${t.procurementId} IS NOT NULL AND ${t.procurementId}=${t.id}) OR (${t.parentType}='PROJECT' AND ${t.projectId} IS NOT NULL AND ${t.projectId}=${t.id}))`,
+    ),
+  ],
+);
+export const attachments = pgTable("attachments", {
+  id: uuid("id").primaryKey(),
+  recordId: uuid("record_id")
+    .notNull()
+    .references(() => attachmentTargets.id),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id),
+  filename: text("filename").notNull(),
+  mediaType: varchar("media_type", { length: 32 }).notNull(),
+  size: integer("size").notNull(),
+  objectKey: text("object_key").notNull(),
+  state: varchar("state", { length: 12 }).notNull().default("STAGED"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

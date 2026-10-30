@@ -1,3 +1,4 @@
+import { requireReadyEvidence } from "../attachments/pending-evidence.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   BadRequestException,
@@ -121,6 +122,7 @@ export class WorkforceService {
       if (principal.kind !== "workspace") throw new ForbiddenException();
       const current = await this.lockRecord(tx, command.recordId);
       this.expectDraftVersion(current, command.expectedVersion);
+      await requireReadyEvidence(tx, current.id, command.acknowledgePendingEvidence);
       await this.requireWorker(tx, current.workerId, true);
       await this.requireActiveProject(tx, current.projectId);
       if (current.kind === "EARNING") await this.requireEligibleEngagement(tx, current);

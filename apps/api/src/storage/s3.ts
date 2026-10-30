@@ -31,6 +31,7 @@ export function storageSettingsFromEnvironment(): StorageSettings | undefined {
 
 export function createS3Client(settings: StorageSettings): S3Client {
   return new S3Client({
+    requestChecksumCalculation: "WHEN_REQUIRED",
     endpoint: settings.endpoint,
     region: settings.region,
     forcePathStyle: settings.forcePathStyle,

@@ -1,3 +1,5 @@
+import { RecordEvidence } from "@/finance/RecordEvidence";
+import { FinancePanel } from "@/finance/FinancePanel";
 import type { DraftView } from "@sazeh/contracts";
 import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
@@ -12,6 +14,7 @@ import type { DirectoryRecord, WorkspaceDirectoryData } from "../types";
 
 type NoteController = Pick<AppController, "drafts" | "saveDraft" | "saving" | "exportPending">;
 type Props = {
+  userId: string;
   project: DirectoryRecord | undefined;
   data: WorkspaceDirectoryData;
   notes: NoteController | undefined;
@@ -20,7 +23,15 @@ type Props = {
   repository: DraftWorkspace;
 };
 
-export function ProjectDetailPage({ project, data, notes, locked, online, repository }: Props) {
+export function ProjectDetailPage({
+  userId,
+  project,
+  data,
+  notes,
+  locked,
+  online,
+  repository,
+}: Props) {
   useEffect(() => {
     if (project && online) void repository.pullProjectNotes(project.id).catch(() => undefined);
   }, [online, project, repository]);
@@ -103,6 +114,14 @@ export function ProjectDetailPage({ project, data, notes, locked, online, reposi
         </div>
 
         <aside className="grid content-start gap-4">
+          <RecordEvidence recordId={project.id} parentType="PROJECT" />
+          <FinancePanel
+            contacts={data.contacts}
+            repository={repository}
+            userId={userId}
+            projectId={project.id}
+            online={online && !locked}
+          />
           <Card>
             <CardHeader>
               <h3 className="font-semibold">مشخصات پروژه</h3>

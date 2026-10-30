@@ -60,9 +60,14 @@ export const authClient = {
 
   async refresh(): Promise<SessionResponse> {
     if (refreshInFlight) return refreshInFlight;
+    let refreshOwner: { userId: string; epoch: number } | undefined;
     refreshInFlight = workspaceControl
       .withLifecycleLock(async (signal) => {
         const state = await workspaceControl.state();
+        if (state.phase === "active" && state.user)
+          refreshOwner = { userId: state.user.id, epoch: state.epoch };
+        if (state.syncAuthentication === "required")
+          throw new ApiError("Sign in again to resume synchronization.", 401, "AUTH_REQUIRED");
         if (state.phase === "departing" || state.phase === "logout-pending") {
           throw new ApiError(
             "Finish signing out before refreshing the session.",
@@ -81,8 +86,18 @@ export const authClient = {
         }
         return result;
       })
-      .catch((error: unknown) => {
-        if (error instanceof ApiError && error.status === 401) clearMemory();
+      .catch(async (error: unknown) => {
+        if (error instanceof ApiError && error.status === 401) {
+          clearMemory();
+          const state = await workspaceControl.state();
+          if (
+            state.phase === "active" &&
+            state.user &&
+            refreshOwner?.userId === state.user.id &&
+            refreshOwner.epoch === state.epoch
+          )
+            await workspaceControl.pauseSync(state.user.id, state.epoch);
+        }
         throw error;
       })
       .finally(() => {
@@ -106,7 +121,9 @@ export const authClient = {
   },
 
   async tokenForSync(expectedUserId?: string): Promise<string> {
+    await requireSyncAuthentication();
     if (!accessToken || accessExpiresAt <= Date.now() + 30_000) {
+      await requireSyncAuthentication();
       const grant = await this.refresh();
       if (expectedUserId && grant.user.id !== expectedUserId) {
         throw new ApiError(
@@ -141,6 +158,7 @@ export const authClient = {
         clearMemory();
         throw new ApiError("Your session is no longer active.", 401, problem.code);
       }
+      await requireSyncAuthentication();
       const grant = await this.refresh();
       if (expectedUserId && grant.user.id !== expectedUserId) {
         throw new ApiError("The browser account changed. Sign in again.", 401, "ACCOUNT_SWITCHED");
@@ -163,6 +181,7 @@ export const authClient = {
         clearMemory();
         throw new ApiError("Your session is no longer active.", 401, problem.code);
       }
+      await requireSyncAuthentication();
       const grant = await this.refresh();
       if (grant.user.id !== userId)
         throw new ApiError(
@@ -292,4 +311,10 @@ function clearMemory(): void {
   accessToken = undefined;
   accessExpiresAt = 0;
   sessionUser = undefined;
+}
+
+async function requireSyncAuthentication() {
+  const state = await workspaceControl.state();
+  if (state.syncAuthentication === "required")
+    throw new ApiError("Sign in again to resume synchronization.", 401, "AUTH_REQUIRED");
 }

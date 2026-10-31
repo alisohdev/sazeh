@@ -1,5 +1,6 @@
 import { Card } from "@/components/ui/card";
 import type { DirectoryRecord, DirectorySaveResult } from "../types";
+import { ProjectTable } from "./ProjectTable";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectForm } from "./ProjectForm";
 import { useState } from "react";
@@ -86,7 +87,8 @@ export function ProjectSection(props: Props) {
           )}
         </DialogContent>
       </Dialog>
-      <div className="grid min-w-0 content-start gap-4 xl:grid-cols-2" aria-live="polite">
+      <ProjectTable {...props} />
+      <div className="grid min-w-0 content-start gap-4 md:hidden" aria-live="polite">
         {props.rows.map((row) => (
           <ProjectCard
             key={row.id}

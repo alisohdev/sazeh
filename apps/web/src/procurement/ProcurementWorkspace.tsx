@@ -1,3 +1,4 @@
+import { FilePlus2, Package, ChartNoAxesCombined } from "lucide-react";
 import { useReducer } from "react";
 import type { ProcurementDocumentInput, User } from "@sazeh/contracts";
 import type { WorkspaceRepository } from "@/data/workspace-repository";
@@ -89,11 +90,20 @@ export function ProcurementWorkspace({ user, repository, data, locked, online, o
           بدهی تأمین‌کننده، خرید، موجودی و هزینه مصرف هر کدام از منبع درست خود محاسبه می‌شوند.
         </p>
       </header>
-      <Tabs defaultValue="entry">
-        <TabsList className="w-full overflow-x-auto">
-          <TabsTrigger value="entry">ثبت سند</TabsTrigger>
-          <TabsTrigger value="materials">مصالح</TabsTrigger>
-          <TabsTrigger value="reports">گزارش و تحلیل</TabsTrigger>
+      <Tabs defaultValue="entry" dir="rtl" className="min-w-0">
+        <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1.5 shadow-sm [&_[data-slot=tabs-trigger]]:h-11 [&_[data-slot=tabs-trigger]]:gap-2 [&_[data-slot=tabs-trigger]]:text-foreground [&_[data-slot=tabs-trigger]]:data-[state=active]:bg-primary [&_[data-slot=tabs-trigger]]:data-[state=active]:text-primary-foreground">
+          <TabsTrigger value="entry">
+            <FilePlus2 className="size-4 shrink-0" />
+            ثبت سند
+          </TabsTrigger>
+          <TabsTrigger value="materials">
+            <Package className="size-4 shrink-0" />
+            مصالح
+          </TabsTrigger>
+          <TabsTrigger value="reports">
+            <ChartNoAxesCombined className="hidden size-4 shrink-0 sm:block" />
+            گزارش و تحلیل
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="entry">
           <ProcurementEntryForm

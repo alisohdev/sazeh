@@ -46,14 +46,36 @@ export function ProcurementLineEditor({
   }
 
   return (
-    <FieldGroup className="sm:col-span-2">
+    <FieldGroup className="gap-3 border-t border-border pt-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">ردیف‌های مصالح</h3>
+        <span className="text-sm text-muted-foreground">
+          {lines.length.toLocaleString("fa-IR")} ردیف
+        </span>
+      </div>
       {lines.map((line, index) => {
         const selectedSource = sourceLines.find((item) => item.id === line.sourceLineId);
         return (
           <div
             key={line.id}
-            className="grid gap-3 rounded-lg border border-border/70 p-3 sm:grid-cols-3"
+            className="grid gap-4 rounded-xl border border-border bg-muted/20 p-4 sm:grid-cols-3"
           >
+            <div className="flex items-center justify-between border-b border-border pb-3 sm:col-span-3">
+              <span className="text-sm font-medium">
+                ردیف {(index + 1).toLocaleString("fa-IR")}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={lines.length === 1}
+                aria-label={`حذف ردیف ${index + 1}`}
+                onClick={() => onChange(lines.filter((_, lineIndex) => lineIndex !== index))}
+              >
+                <Trash2Icon className="size-4" />
+                حذف
+              </Button>
+            </div>
             {sourceMode ? (
               <ProcurementSelect
                 id={`source-line-${line.id}`}
@@ -89,6 +111,7 @@ export function ProcurementLineEditor({
               <Input
                 id={`quantity-${line.id}`}
                 dir="ltr"
+                className="text-right"
                 inputMode="decimal"
                 value={line.quantity}
                 onChange={(event) => update(index, { quantity: event.target.value })}
@@ -98,30 +121,20 @@ export function ProcurementLineEditor({
               <Field>
                 <FieldLabel htmlFor={`price-${line.id}`}>نرخ واحد (تومان)</FieldLabel>
                 <FormattedNumberInput
+                  className="text-right"
                   id={`price-${line.id}`}
                   value={line.unitPriceToman}
                   onChange={(event) => update(index, { unitPriceToman: event.target.value })}
                 />
               </Field>
-            ) : (
-              <div className="flex items-end justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={lines.length === 1}
-                  onClick={() => onChange(lines.filter((_, lineIndex) => lineIndex !== index))}
-                >
-                  <Trash2Icon data-icon="inline-start" /> حذف ردیف
-                </Button>
-              </div>
-            )}
+            ) : null}
           </div>
         );
       })}
       <Button
         type="button"
         variant="outline"
+        className="h-10 w-fit border-dashed bg-transparent px-4"
         onClick={add}
         disabled={sourceMode && !sourceLines.length}
       >

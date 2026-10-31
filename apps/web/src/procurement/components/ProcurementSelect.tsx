@@ -30,11 +30,11 @@ export function ProcurementSelect({
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger id={id} className="h-10 w-full">
+      <Select dir="rtl" value={value || undefined} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger id={id} className="h-10 w-full text-start">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
-        <SelectContent position="popper">
+        <SelectContent dir="rtl" position="popper">
           <SelectGroup>
             {options.map((option) => (
               <SelectItem key={option.value} value={option.value} disabled={option.disabled}>

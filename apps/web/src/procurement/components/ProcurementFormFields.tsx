@@ -9,13 +9,12 @@ import {
 } from "../../components/ui/card";
 import { Field, FieldLabel } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
-import { PersianDatePicker } from "../../components/persian-date-picker";
+import { ProcurementDocumentFields } from "./ProcurementDocumentFields";
 import type { DirectoryRecord } from "../../business/types";
 import type { ProcurementRecord } from "../types";
 import { ProcurementLineEditor, type EditableLine } from "./ProcurementLineEditor";
 import { ProcurementPaymentFields } from "./ProcurementPaymentFields";
-import { ProcurementSelect } from "./ProcurementSelect";
-import { ProcurementSourceSelect, sourceRecordsFor } from "./ProcurementSourceSelect";
+import { sourceRecordsFor } from "./ProcurementSourceSelect";
 
 export type FormView = {
   kind: ProcurementRecord["kind"];
@@ -45,100 +44,25 @@ type Props = {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
 
-const kindOptions = [
-  ["PURCHASE_INVOICE", "فاکتور خرید"],
-  ["SUPPLIER_PAYMENT", "پرداخت به تأمین‌کننده"],
-  ["STOCK_RECEIPT", "رسید مصالح"],
-  ["STOCK_ISSUE", "مصرف مصالح"],
-  ["STOCK_TRANSFER", "انتقال بین پروژه‌ها"],
-  ["STOCK_RETURN", "برگشت از مصرف"],
-  ["SUPPLIER_RETURN", "مرجوعی به تأمین‌کننده"],
-] as const;
-
 export function ProcurementFormFields(props: Props) {
   const { view } = props;
   const sourceRecords = sourceRecordsFor(props.records, view);
   const source = sourceRecords.find((record) => record.id === view.sourceDocumentId);
-  const requiresSupplier = [
-    "PURCHASE_INVOICE",
-    "SUPPLIER_PAYMENT",
-    "STOCK_RECEIPT",
-    "SUPPLIER_RETURN",
-  ].includes(view.kind);
   const showLines = view.kind !== "SUPPLIER_PAYMENT";
 
   return (
-    <Card dir="rtl">
-      <CardHeader>
-        <CardTitle>{props.editing ? "ویرایش پیش‌نویس" : "ثبت خرید یا گردش مصالح"}</CardTitle>
+    <Card dir="rtl" className="overflow-hidden py-0 shadow-sm">
+      <CardHeader className="border-b border-border bg-muted/30 px-5 py-5 sm:px-7">
+        <CardTitle className="text-xl leading-8">
+          {props.editing ? "ویرایش پیش‌نویس" : "ثبت خرید یا گردش مصالح"}
+        </CardTitle>
         <CardDescription>
           ثبت پیش‌نویس روی سرور اثر مالی یا موجودی ایجاد نمی‌کند؛ ثبت نهایی مرحله‌ای جداگانه است.
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <form className="grid gap-4 sm:grid-cols-2" onSubmit={props.onSubmit}>
-          <ProcurementSelect
-            id="procurement-kind"
-            label="نوع سند"
-            value={view.kind}
-            placeholder="نوع سند را انتخاب کنید"
-            options={kindOptions.map(([value, label]) => ({ value, label }))}
-            onChange={(kind) => props.onChange({ kind: kind as FormView["kind"] })}
-            disabled={props.editing}
-          />
-          <ProcurementSelect
-            id="procurement-project"
-            label="پروژه"
-            value={view.projectId}
-            placeholder="پروژه را انتخاب کنید"
-            options={directoryOptions(props.projects, "name")}
-            onChange={(projectId) => props.onChange({ projectId, sourceDocumentId: "" })}
-          />
-          {requiresSupplier && (
-            <ProcurementSelect
-              id="procurement-supplier"
-              label="تأمین‌کننده"
-              value={view.supplierId}
-              placeholder="تأمین‌کننده را انتخاب کنید"
-              options={directoryOptions(props.suppliers, "displayName")}
-              onChange={(supplierId) => props.onChange({ supplierId })}
-            />
-          )}
-          {view.kind === "STOCK_TRANSFER" && (
-            <ProcurementSelect
-              id="procurement-destination"
-              label="پروژه مقصد"
-              value={view.destinationProjectId}
-              placeholder="پروژه مقصد را انتخاب کنید"
-              options={directoryOptions(props.projects, "name").filter(
-                (option) => option.value !== view.projectId,
-              )}
-              onChange={(destinationProjectId) => props.onChange({ destinationProjectId })}
-            />
-          )}
-          <ProcurementSourceSelect records={props.records} view={view} onChange={props.onChange} />
-          <Field>
-            <FieldLabel htmlFor="procurement-date">تاریخ سند</FieldLabel>
-            <PersianDatePicker
-              id="procurement-date"
-              name="businessDate"
-              defaultValue={props.initialBusinessDate}
-              required
-            />
-          </Field>
-          {view.kind === "PURCHASE_INVOICE" && (
-            <ProcurementSelect
-              id="receive-all"
-              label="دریافت هم‌زمان"
-              value={view.receiveAllNow}
-              placeholder="انتخاب کنید"
-              options={[
-                { value: "false", label: "خیر، تحویل جداگانه" },
-                { value: "true", label: "دریافت همه اکنون" },
-              ]}
-              onChange={(receiveAllNow) => props.onChange({ receiveAllNow })}
-            />
-          )}
+      <CardContent className="px-5 py-6 sm:px-7">
+        <form className="grid gap-7" onSubmit={props.onSubmit}>
+          <ProcurementDocumentFields {...props} />
           {view.kind === "SUPPLIER_PAYMENT" && (
             <ProcurementPaymentFields
               view={view}
@@ -155,28 +79,34 @@ export function ProcurementFormFields(props: Props) {
               onChange={(lines) => props.onChange({ lines })}
             />
           )}
-          <Field className="sm:col-span-2">
+          <Field className="border-t border-border pt-6">
             <FieldLabel htmlFor="procurement-description">شرح و مرجع</FieldLabel>
-            <Input id="procurement-description" name="description" required />
+            <Input
+              id="procurement-description"
+              name="description"
+              placeholder="شماره فاکتور یا توضیح این سند"
+              required
+            />
           </Field>
           {view.message && (
             <p className="text-sm text-destructive sm:col-span-2" role="alert">
               {view.message}
             </p>
           )}
-          <Button
-            className="w-full sm:col-span-2"
-            type="submit"
-            disabled={props.locked || view.saving}
-          >
-            {view.saving ? "در حال ثبت…" : "ثبت پیش‌نویس روی سرور"}
-          </Button>
+          <footer className="flex flex-col gap-4 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-6 text-muted-foreground">
+              ابتدا پیش‌نویس را ذخیره کنید؛ سپس آن را بررسی و نهایی کنید.
+            </p>
+            <Button
+              className="h-11 w-full shrink-0 px-6 sm:w-auto"
+              type="submit"
+              disabled={props.locked || view.saving}
+            >
+              {view.saving ? "در حال ثبت…" : "ذخیرهٔ پیش‌نویس"}
+            </Button>
+          </footer>
         </form>
       </CardContent>
     </Card>
   );
-}
-
-function directoryOptions(rows: DirectoryRecord[], field: string) {
-  return rows.map((row) => ({ value: row.id, label: String(row.data[field] ?? "") }));
 }
